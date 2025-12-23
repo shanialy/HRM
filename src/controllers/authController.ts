@@ -8,6 +8,8 @@ import { generateToken } from "../utils/Token";
 import { CustomRequest } from "../interfaces/auth";
 import { hash } from "crypto";
 import AuthConfig from "../config/authConfig";
+import { sendEmail } from "../utils/SendEmail";
+import { emailTemplateGeneric } from "../utils/SendEmail/templates";
 
 export const login = async (req: Request, res: Response) => {
   try {
@@ -81,7 +83,13 @@ export const createEmployee = async (req: CustomRequest, res: Response) => {
       status: "ACTIVE",
     });
 
-    //send email to employee with login details
+    const template = emailTemplateGeneric(
+      "Welcome to the Company",
+      "Employee",
+      email,
+      password
+    );
+    await sendEmail(email, "Your account has been created", template);
 
     return ResponseUtil.successResponse(
       res,
@@ -109,7 +117,14 @@ export const createUser = async (req: CustomRequest, res: Response) => {
       status: "ACTIVE",
     });
 
-    //Send Email or SMS with login details to the user
+    const template = emailTemplateGeneric(
+      "Welcome to the TSH Services",
+      "User",
+      email,
+      password
+    );
+
+    await sendEmail(email, "Your account has been created", template);
 
     return ResponseUtil.successResponse(
       res,
