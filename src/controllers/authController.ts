@@ -6,10 +6,11 @@ import { AUTH_CONSTANTS } from "../constants/messages";
 import { compareSync } from "bcrypt";
 import { generateToken } from "../utils/Token";
 import { CustomRequest } from "../interfaces/auth";
-import { hash } from "crypto";
+import { hash } from "bcrypt";
 import AuthConfig from "../config/authConfig";
 import { sendEmail } from "../utils/SendEmail";
 import { emailTemplateGeneric } from "../utils/SendEmail/templates";
+import { generateRandomPassword } from "../middleware/passwordGenerator";
 
 export const login = async (req: Request, res: Response) => {
   try {
@@ -55,7 +56,7 @@ export const login = async (req: Request, res: Response) => {
 
 export const createEmployee = async (req: CustomRequest, res: Response) => {
   try {
-    const { name, email, password, isSales, targetAmount } = req.body;
+    const { name, email, userType, targetAmount } = req.body;
 
     const existing = await AccountModel.findOne({ email });
     if (existing) {
@@ -65,7 +66,7 @@ export const createEmployee = async (req: CustomRequest, res: Response) => {
         AUTH_CONSTANTS.USER_ALREADY_EXISTS
       );
     }
-
+    const password = generateRandomPassword();
     const hashedPassword = await hash(password, String(AuthConfig.SALT));
 
     await AccountModel.create({
@@ -73,8 +74,8 @@ export const createEmployee = async (req: CustomRequest, res: Response) => {
       email,
       password: hashedPassword,
       role: "EMPLOYEE",
-      isSales: isSales || false,
-      targetAmount: isSales ? targetAmount : 0,
+      userType,
+      targetAmount: userType == "SALES" ? targetAmount : 0,
       createdBy: req.userId,
       permissions: {
         createUser: true,
@@ -104,7 +105,9 @@ export const createEmployee = async (req: CustomRequest, res: Response) => {
 
 export const createUser = async (req: CustomRequest, res: Response) => {
   try {
-    const { name, password, email } = req.body;
+    const { name, email } = req.body;
+    const password = generateRandomPassword();
+
     const hashedPassword = await hash(password, String(AuthConfig.SALT));
 
     const user = await AccountModel.create({
