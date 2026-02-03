@@ -1,16 +1,48 @@
 import { Schema, model } from "mongoose";
 
-const UserAssignmentSchema = new Schema(
+const ClientSchema = new Schema(
   {
-    user: { type: Schema.Types.ObjectId, ref: "Account", required: true },
-    fromEmployee: { type: Schema.Types.ObjectId, ref: "Account" },
-    toEmployee: { type: Schema.Types.ObjectId, ref: "Account", required: true },
-    assignedBy: { type: Schema.Types.ObjectId, ref: "Account", required: true },
+    name: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    email: {
+      type: String,
+      lowercase: true,
+      trim: true,
+    },
+
+    phone: {
+      type: String,
+      trim: true,
+    },
+
+    company: {
+      type: String,
+      trim: true,
+    },
+
+    address: {
+      type: String,
+      trim: true,
+    },
+
+    status: {
+      type: String,
+      enum: ["ACTIVE", "INACTIVE"],
+      default: "ACTIVE",
+    },
+
+ 
+    createdBy: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
   },
   { timestamps: true }
 );
 
-export const UserAssignmentModel = model(
-  "UserAssignment",
-  UserAssignmentSchema
-);
+export const ClientModel = model("Client", ClientSchema);
