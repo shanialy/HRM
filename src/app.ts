@@ -5,7 +5,10 @@ import morganBody from "morgan-body";
 import { connectDB } from "./config/db";
 import swaggerJSDoc from "swagger-jsdoc";
 import swaggerUi from "swagger-ui-express";
-import authRoutes from "./routes/authRoutes";
+import authorizationRoutes from "./routes/authorizationRoutes";
+import employeeRoutes from "./routes/employeesRoutes"
+import attendanceRoutes from "./routes/attendanceRoutes"
+import clientRoutes from "./routes/clientRoutes"
 // import userRoutes from "./routes/userRoutes";
 import swaggerOptions from "./config/swagger";
 import express, { Request, Response } from "express";
@@ -36,7 +39,11 @@ morganBody(app, {
 });
 
 // Routes
-app.use(`${API_PREFIX}/auth`, authRoutes);
+app.use(`${API_PREFIX}/authorization`, authorizationRoutes);
+app.use(`${API_PREFIX}/employee`, employeeRoutes);
+app.use(`${API_PREFIX}/attendance`, attendanceRoutes);
+app.use(`${API_PREFIX}/client`, clientRoutes);
+
 // app.use(`${API_PREFIX}/user`, userRoutes);
 // app.use(`${API_PREFIX}/therapist`, therapistRoutes);
 // app.use(`${API_PREFIX}/resource`, resourcesRoute);

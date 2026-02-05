@@ -7,9 +7,6 @@ import { generateToken } from "../utils/Token";
 import { CustomRequest } from "../interfaces/auth";
 import { hash } from "bcrypt";
 import AuthConfig from "../config/authConfig";
-import { sendEmail } from "../utils/SendEmail";
-import { emailTemplateGeneric } from "../utils/SendEmail/templates";
-import { generateRandomPassword } from "../middleware/passwordGenerator";
 import { UserModel } from "../models/userModel";
 
 export const login = async (req: Request, res: Response) => {
@@ -25,8 +22,7 @@ export const login = async (req: Request, res: Response) => {
       );
     }
     const hashpass = compareSync(password, String(user.password));
-    console.log("INPUT PASSWORD:", password);
-    console.log("COMPARE RESULT:", hashpass);
+   
 
     if (!hashpass) {
       return ResponseUtil.errorResponse(
@@ -48,7 +44,8 @@ export const login = async (req: Request, res: Response) => {
       email: email,
       id: String(user._id),
       role: String(user.role),
-    });
+      department: String(user.department),
+     });
 
     user = user.toObject();
     delete user.password;
@@ -300,42 +297,3 @@ export const changeEmployeeStatus = async (req: any, res: Response) => {
   }
 };
 
-// export const createClinet = async (req: any, res: Response) => {
-//   try {
-//     const { firstName,lastName,email,address,phone,password,role } = req.body;
-//     const genpassword = generateRandomPassword();
-
-//     const hashedPassword = await hash(genpassword, String(AuthConfig.SALT));
-
-//     const user = await UserModel.create({
-//       firstName,
-//       lastName,
-//       address,
-//       phone,
-//       email,
-//       password: hashedPassword,
-//       role: "",
-//       createdBy: req.userId,
-//       assignedEmployee: req.userId,
-//       status: "ACTIVE",
-//     });
-
-//     const template = emailTemplateGeneric(
-//       "Welcome to the TSH Services",
-//       "User",
-//       email,
-//       password
-//     );
-
-//     await sendEmail(email, "Your account has been created", template);
-
-//     return ResponseUtil.successResponse(
-//       res,
-//       STATUS_CODES.SUCCESS,
-//       user,
-//       AUTH_CONSTANTS.CREATED
-//     );
-//   } catch (err) {
-//     return ResponseUtil.handleError(res, err);
-//   }
-// };

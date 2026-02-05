@@ -24,9 +24,11 @@ export const checkAuth = (
     }
 
     const decodedPayload = decoded as JwtPayload;
+    console.log("JWT DECODED:", decodedPayload);
     req.userId = decodedPayload.id;
     req.email = decodedPayload.email;
     req.role = decodedPayload.role ? decodedPayload.role : "";
+     req.department = decodedPayload.department ? decodedPayload.department : "";
     next();
   });
 };
