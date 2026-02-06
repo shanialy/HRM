@@ -22,7 +22,6 @@ export const login = async (req: Request, res: Response) => {
       );
     }
     const hashpass = compareSync(password, String(user.password));
-   
 
     if (!hashpass) {
       return ResponseUtil.errorResponse(
@@ -45,7 +44,7 @@ export const login = async (req: Request, res: Response) => {
       id: String(user._id),
       role: String(user.role),
       department: String(user.department),
-     });
+    });
 
     user = user.toObject();
     delete user.password;
@@ -99,7 +98,6 @@ export const createEmployee = async (req: any, res: Response) => {
       firstName,
       lastName,
       email,
-      password,
       salary,
       userType,
       targetAmount,
@@ -109,7 +107,7 @@ export const createEmployee = async (req: any, res: Response) => {
       address,
     } = req.body;
 
-    if (!firstName || !lastName || !email || !password) {
+    if (!firstName || !lastName || !email) {
       return ResponseUtil.errorResponse(
         res,
         STATUS_CODES.BAD_REQUEST,
@@ -126,7 +124,7 @@ export const createEmployee = async (req: any, res: Response) => {
       );
     }
 
-    const hashedPassword = await hash(password, String(AuthConfig.SALT));
+    const hashedPassword = await hash("Password@12", String(AuthConfig.SALT));
 
     const employee = await UserModel.create({
       firstName,
@@ -166,10 +164,9 @@ export const getAllEmployees = async (req: any, res: Response) => {
       );
     }
     const page = Number(req.query.page) || 1;
-    const limit = Number(req.query.limit) || 10;
+    const limit = Number(req.query.limit) || 5;
     const skip = (page - 1) * limit;
 
-    
     const employees = await UserModel.find({ role: "EMPLOYEE" })
       .select("-password")
       .sort({ createdAt: -1 })
@@ -198,7 +195,6 @@ export const getAllEmployees = async (req: any, res: Response) => {
     return ResponseUtil.handleError(res, err);
   }
 };
-
 
 export const getSingleEmployee = async (req: any, res: Response) => {
   try {
@@ -315,4 +311,3 @@ export const changeEmployeeStatus = async (req: any, res: Response) => {
     return ResponseUtil.handleError(res, err);
   }
 };
-
