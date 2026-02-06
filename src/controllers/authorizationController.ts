@@ -165,21 +165,40 @@ export const getAllEmployees = async (req: any, res: Response) => {
         "Access denied",
       );
     }
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
 
+    
     const employees = await UserModel.find({ role: "EMPLOYEE" })
       .select("-password")
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    const totalEmployees = await UserModel.countDocuments({
+      role: "EMPLOYEE",
+    });
 
     return ResponseUtil.successResponse(
       res,
       STATUS_CODES.SUCCESS,
-      { employees },
+      {
+        employees,
+        pagination: {
+          total: totalEmployees,
+          page,
+          limit,
+          totalPages: Math.ceil(totalEmployees / limit),
+        },
+      },
       "Employees fetched successfully",
     );
   } catch (err) {
     return ResponseUtil.handleError(res, err);
   }
 };
+
 
 export const getSingleEmployee = async (req: any, res: Response) => {
   try {

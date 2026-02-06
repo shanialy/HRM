@@ -122,6 +122,11 @@ export const getMyAttendance = async (req: any, res: Response) => {
 
     const { month, year } = req.query;
 
+    
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+
     const filter: any = {
       user: req.userId,
     };
@@ -154,14 +159,28 @@ export const getMyAttendance = async (req: any, res: Response) => {
       filter.year = yearNum;
     }
 
+
     const attendance = await AttendanceModel.find(filter)
       .sort({ date: -1 })
+      .skip(skip)
+      .limit(limit)
       .lean();
+
+    
+    const totalAttendance = await AttendanceModel.countDocuments(filter);
 
     return ResponseUtil.successResponse(
       res,
       STATUS_CODES.SUCCESS,
-      { attendance },
+      {
+        attendance,
+        pagination: {
+          total: totalAttendance,
+          page,
+          limit,
+          totalPages: Math.ceil(totalAttendance / limit),
+        },
+      },
       "My attendance fetched successfully",
     );
   } catch (err) {
@@ -180,6 +199,11 @@ export const adminGetAllAttendance = async (req: any, res: Response) => {
     }
 
     const { employeeId, month, year, from, to } = req.query;
+
+    
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
 
     const filter: any = {};
 
@@ -242,19 +266,31 @@ export const adminGetAllAttendance = async (req: any, res: Response) => {
     const attendance = await AttendanceModel.find(filter)
       .populate("user", "firstName lastName email role")
       .sort({ date: -1 })
+      .skip(skip)
+      .limit(limit)
       .lean();
+
+   
+    const totalAttendance = await AttendanceModel.countDocuments(filter);
 
     return ResponseUtil.successResponse(
       res,
       STATUS_CODES.SUCCESS,
-      { attendance },
+      {
+        attendance,
+        pagination: {
+          total: totalAttendance,
+          page,
+          limit,
+          totalPages: Math.ceil(totalAttendance / limit),
+        },
+      },
       "Attendance fetched successfully",
     );
   } catch (err) {
     return ResponseUtil.handleError(res, err);
   }
 };
-
 export const requestLeave = async (req: any, res: Response) => {
   try {
     if (req.role !== "EMPLOYEE") {

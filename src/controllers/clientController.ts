@@ -92,7 +92,6 @@ return ResponseUtil.successResponse(
 
 export const getMyClients = async (req: CustomRequest, res: Response) => {
   try {
-    
     if (req.role !== "EMPLOYEE" || req.department !== "SALES") {
       return ResponseUtil.errorResponse(
         res,
@@ -101,24 +100,46 @@ export const getMyClients = async (req: CustomRequest, res: Response) => {
       );
     }
 
-    const clients = await UserModel.find({
+    
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    const filter = {
       role: "CLIENT",
       createdBy: req.userId,
       status: "ACTIVE",
-    })
+    };
+
+    
+    const clients = await UserModel.find(filter)
       .select("firstName lastName email address phone status createdAt")
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    
+    const totalClients = await UserModel.countDocuments(filter);
 
     return ResponseUtil.successResponse(
       res,
       STATUS_CODES.SUCCESS,
-      clients,
+      {
+        clients,
+        pagination: {
+          total: totalClients,
+          page,
+          limit,
+          totalPages: Math.ceil(totalClients / limit),
+        },
+      },
       "Clients fetched successfully"
     );
   } catch (err) {
     return ResponseUtil.handleError(res, err);
   }
 };
+
 
 export const getSingleClient = async (req: CustomRequest, res: Response) => {
   try {
