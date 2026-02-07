@@ -196,6 +196,48 @@ export const getAllEmployees = async (req: any, res: Response) => {
   }
 };
 
+// GET /employee/:id
+export const getEmployeeById = async (req: any, res: Response) => {
+  try {
+    if (req.role !== "ADMIN") {
+      return ResponseUtil.errorResponse(
+        res,
+        STATUS_CODES.FORBIDDEN,
+        "Access denied",
+      );
+    }
+
+    const { id } = req.params;
+
+    if (!id) {
+      return ResponseUtil.errorResponse(
+        res,
+        STATUS_CODES.BAD_REQUEST,
+        "Employee ID is required",
+      );
+    }
+
+    const employee = await UserModel.findById(id).select("-password");
+
+    if (!employee) {
+      return ResponseUtil.errorResponse(
+        res,
+        STATUS_CODES.NOT_FOUND,
+        "Employee not found",
+      );
+    }
+
+    return ResponseUtil.successResponse(
+      res,
+      STATUS_CODES.SUCCESS,
+      { employee },
+      "Employee fetched successfully",
+    );
+  } catch (err) {
+    return ResponseUtil.handleError(res, err);
+  }
+};
+
 export const getSingleEmployee = async (req: any, res: Response) => {
   try {
     const { id } = req.params;
