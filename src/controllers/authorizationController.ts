@@ -86,14 +86,6 @@ export const getProfile = async (req: CustomRequest, res: Response) => {
 
 export const createEmployee = async (req: any, res: Response) => {
   try {
-    if (req.role !== "ADMIN") {
-      return ResponseUtil.errorResponse(
-        res,
-        STATUS_CODES.FORBIDDEN,
-        "Access denied",
-      );
-    }
-
     const {
       firstName,
       lastName,
@@ -156,13 +148,6 @@ export const createEmployee = async (req: any, res: Response) => {
 
 export const getAllEmployees = async (req: any, res: Response) => {
   try {
-    if (req.role !== "ADMIN") {
-      return ResponseUtil.errorResponse(
-        res,
-        STATUS_CODES.FORBIDDEN,
-        "Access denied",
-      );
-    }
     const page = Number(req.query.page) || 1;
     const limit = Number(req.query.limit) || 5;
     const skip = (page - 1) * limit;
@@ -312,14 +297,6 @@ export const changeEmployeeStatus = async (req: any, res: Response) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
-
-    if (!status || !["ACTIVE", "INACTIVE"].includes(status)) {
-      return ResponseUtil.errorResponse(
-        res,
-        STATUS_CODES.BAD_REQUEST,
-        "Status must be ACTIVE or INACTIVE",
-      );
-    }
 
     if (req.role !== "ADMIN") {
       return ResponseUtil.errorResponse(
