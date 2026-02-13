@@ -8,14 +8,15 @@ import {
   requestLeave,
 } from "../controllers/attendanceController";
 import { validate } from "../middleware/validate";
-import {
-  adminGetAllAttendanceSchema,
-  approveRejectLeaveSchema,
-  checkInCheckOutSchema,
-  getMyAttendanceSchema,
-  requestLeaveSchema,
-} from "../validators/authValidators";
+
 import role from "../middleware/checkRole";
+import {
+  adminAttendanceSchema,
+  LeaveSchema,
+  AttendanceSchema,
+  checkInCheckOutSchema,
+  requestLeaveSchema,
+} from "../validators/attendanceValidators";
 const router = Router();
 
 router.post(
@@ -30,7 +31,7 @@ router.get(
   "/attendance",
   checkAuth,
   role("EMPLOYEE"),
-  validate(getMyAttendanceSchema),
+  validate(AttendanceSchema),
   getMyAttendance,
 );
 
@@ -38,7 +39,7 @@ router.get(
   "/attendance/admin",
   checkAuth,
   role("ADMIN"),
-  validate(adminGetAllAttendanceSchema),
+  validate(adminAttendanceSchema),
   adminGetAllAttendance,
 );
 
@@ -54,7 +55,7 @@ router.patch(
   "/attendance/leave/:id",
   checkAuth,
   role("ADMIN"),
-  validate(approveRejectLeaveSchema),
+  validate(LeaveSchema),
   approveRejectLeave,
 );
 export default router;

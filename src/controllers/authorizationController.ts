@@ -8,6 +8,7 @@ import { CustomRequest } from "../interfaces/auth";
 import { hash } from "bcrypt";
 import AuthConfig from "../config/authConfig";
 import { UserModel } from "../models/userModel";
+import { EMPLOYEE_CONSTANT } from "../constants/employee";
 
 export const login = async (req: Request, res: Response) => {
   try {
@@ -137,7 +138,7 @@ export const createEmployee = async (req: CustomRequest, res: Response) => {
       res,
       STATUS_CODES.SUCCESS,
       { employee: employeeWithoutPassword },
-      "Employee created successfully",
+      EMPLOYEE_CONSTANT.CREATED,
     );
   } catch (err) {
     return ResponseUtil.handleError(res, err);
@@ -172,7 +173,7 @@ export const getAllEmployees = async (req: CustomRequest, res: Response) => {
           totalPages: Math.ceil(totalEmployees / limit),
         },
       },
-      "Employees fetched successfully",
+      EMPLOYEE_CONSTANT.FETCHED,
     );
   } catch (err) {
     return ResponseUtil.handleError(res, err);
@@ -186,7 +187,7 @@ export const getEmployeeById = async (req: any, res: Response) => {
       return ResponseUtil.errorResponse(
         res,
         STATUS_CODES.FORBIDDEN,
-        "Access denied",
+        EMPLOYEE_CONSTANT.DENIED,
       );
     }
 
@@ -196,7 +197,7 @@ export const getEmployeeById = async (req: any, res: Response) => {
       return ResponseUtil.errorResponse(
         res,
         STATUS_CODES.BAD_REQUEST,
-        "Employee ID is required",
+        EMPLOYEE_CONSTANT.ID_REQUIRED,
       );
     }
 
@@ -206,7 +207,7 @@ export const getEmployeeById = async (req: any, res: Response) => {
       return ResponseUtil.errorResponse(
         res,
         STATUS_CODES.NOT_FOUND,
-        "Employee not found",
+        EMPLOYEE_CONSTANT.NOT_FOUND,
       );
     }
 
@@ -214,7 +215,7 @@ export const getEmployeeById = async (req: any, res: Response) => {
       res,
       STATUS_CODES.SUCCESS,
       { employee },
-      "Employee fetched successfully",
+      EMPLOYEE_CONSTANT.FETCHED,
     );
   } catch (err) {
     return ResponseUtil.handleError(res, err);
@@ -234,7 +235,7 @@ export const updateEmployee = async (req: any, res: Response) => {
       return ResponseUtil.errorResponse(
         res,
         STATUS_CODES.NOT_FOUND,
-        "Employee not found",
+        EMPLOYEE_CONSTANT.NOT_FOUND,
       );
     }
 
@@ -242,7 +243,7 @@ export const updateEmployee = async (req: any, res: Response) => {
       res,
       STATUS_CODES.SUCCESS,
       { employee: updatedEmployee },
-      "Employee updated successfully",
+      EMPLOYEE_CONSTANT.UPDATED,
     );
   } catch (err) {
     return ResponseUtil.handleError(res, err);
@@ -263,7 +264,7 @@ export const changeEmployeeStatus = async (req: any, res: Response) => {
       return ResponseUtil.errorResponse(
         res,
         STATUS_CODES.NOT_FOUND,
-        "Employee not found",
+        EMPLOYEE_CONSTANT.NOT_FOUND,
       );
     }
 
@@ -271,7 +272,7 @@ export const changeEmployeeStatus = async (req: any, res: Response) => {
       res,
       STATUS_CODES.SUCCESS,
       { employee: updatedEmployee },
-      "Employee updated successfully",
+      EMPLOYEE_CONSTANT.UPDATED,
     );
   } catch (err) {
     return ResponseUtil.handleError(res, err);

@@ -2,12 +2,12 @@ export const emailTemplateGeneric = (
   subject: string,
   role: "Employee" | "User",
   email: string,
-  password: string
+  password: string,
 ) => {
   const description =
     role === "Employee"
       ? `You have been successfully added as an <strong>Employee</strong> at Teck Solution Hub. You can now login and start managing your tasks efficiently. For security purposes, please change your password after logging in.`
-      : `You have been successfully added as a <strong>User</strong> by one of our employees. You can now login and access your account to view your tasks, messages, and updates. For security purposes, please change your password after logging in.`;
+      : `You have been successfully added as a <strong>Client</strong>. You can now login and access your account to view your tasks, messages, and updates. For security purposes, please change your password after logging in.`;
 
   return `
 <!DOCTYPE html>
@@ -33,7 +33,7 @@ export const emailTemplateGeneric = (
     box-shadow: 0 4px 12px rgba(0,0,0,0.1);
   }
   .header {
-    background-color: #1a73e8;
+    background-color: #d32f2f; /* 🔥 CHANGED (Blue → Red) */
     color: #fff;
     padding: 20px;
     text-align: center;
@@ -60,7 +60,7 @@ export const emailTemplateGeneric = (
   }
   .cta-button {
     display: inline-block;
-    background-color: #1a73e8;
+    background-color: #d32f2f; /* 🔥 CHANGED (Blue → Red) */
     color: #fff;
     padding: 12px 25px;
     border-radius: 5px;
@@ -99,10 +99,11 @@ export const emailTemplateGeneric = (
     </div>
     <div class="footer">
       &copy; ${new Date().getFullYear()} Teck Solution Hub. All rights reserved.<br>
-      <a href="https://tsh-hrm.com" style="color:#1a73e8;text-decoration:none;">https://tsh-hrm.com</a>
+      <a href="https://tsh-hrm.com" style="color:#d32f2f;text-decoration:none;">https://tsh-hrm.com</a> <!-- 🔥 CHANGED -->
     </div>
   </div>
 </body>
 </html>
+
   `;
 };

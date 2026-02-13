@@ -2,25 +2,63 @@ import { Request, Response } from "express";
 import ResponseUtil from "../utils/Response/responseUtils";
 import { STATUS_CODES } from "../constants/statusCodes";
 import { hash } from "bcrypt";
-import { AUTH_CONSTANTS } from "../constants/messages";
-import { compareSync } from "bcrypt";
-import { generateToken } from "../utils/Token";
+
 import AuthConfig from "../config/authConfig";
 import { sendEmail } from "../utils/SendEmail";
 import { emailTemplateGeneric } from "../utils/SendEmail/templates";
-import { generateRandomPassword } from "../middleware/passwordGenerator";
+
 import { UserModel } from "../models/userModel";
 import { CustomRequest } from "../interfaces/auth";
-import mongoose from "mongoose";
+import { CLIENT_CONSTANT } from "../constants/client";
+import crypto from "crypto"; // 🆕 ADDED (secure random generator)
 
 export const createClient = async (req: any, res: Response) => {
   try {
     const { firstName, lastName, email, address, phone } = req.body;
 
-    // generate password
-    const genPassword = generateRandomPassword();
+    // ===============================
+    // 🔥 CHANGED: Strong password generator (min 8 chars, secure)
+    // ===============================
+    const generateRandomPassword = (length: number = 8): string => {
+      const upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+      const lower = "abcdefghijklmnopqrstuvwxyz";
+      const numbers = "0123456789";
+      const symbols = "!@#$%^&*";
+
+      const all = upper + lower + numbers + symbols;
+
+      let password =
+        upper[Math.floor(Math.random() * upper.length)] +
+        lower[Math.floor(Math.random() * lower.length)] +
+        numbers[Math.floor(Math.random() * numbers.length)] +
+        symbols[Math.floor(Math.random() * symbols.length)];
+
+      for (let i = 4; i < length; i++) {
+        const randomIndex = crypto.randomInt(0, all.length); // 🔥 CHANGED (more secure than Math.random)
+        password += all[randomIndex];
+      }
+
+      return password
+        .split("")
+        .sort(() => 0.5 - Math.random())
+        .join("");
+    };
+
+    const genPassword = generateRandomPassword(8); // 🔥 CHANGED (explicit min length 8)
 
     const hashedPassword = await hash(genPassword, String(AuthConfig.SALT));
+
+    // ===============================
+    // 🆕 ADDED: Check if email already exists
+    // ===============================
+    const existingUser = await UserModel.findOne({ email });
+    if (existingUser) {
+      return ResponseUtil.errorResponse(
+        res,
+        STATUS_CODES.BAD_REQUEST,
+        CLIENT_CONSTANT.EMAIL_ALREADY_EXISTS,
+      );
+    }
 
     // create user
     const user = await UserModel.create({
@@ -53,7 +91,7 @@ export const createClient = async (req: any, res: Response) => {
       res,
       STATUS_CODES.SUCCESS,
       clientResponse,
-      "Client created successfully",
+      CLIENT_CONSTANT.CREATION_SUCCESSFULL,
     );
   } catch (err) {
     return ResponseUtil.handleError(res, err);
@@ -94,7 +132,7 @@ export const getMyClients = async (req: CustomRequest, res: Response) => {
           totalPages: Math.ceil(totalClients / limit),
         },
       },
-      "Clients fetched successfully",
+      CLIENT_CONSTANT.FETCHED,
     );
   } catch (err) {
     return ResponseUtil.handleError(res, err);
@@ -117,7 +155,7 @@ export const getSingleClient = async (req: CustomRequest, res: Response) => {
       return ResponseUtil.errorResponse(
         res,
         STATUS_CODES.NOT_FOUND,
-        "Client not found",
+        CLIENT_CONSTANT.NOT_FOUND,
       );
     }
 
@@ -125,7 +163,7 @@ export const getSingleClient = async (req: CustomRequest, res: Response) => {
       return ResponseUtil.errorResponse(
         res,
         STATUS_CODES.FORBIDDEN,
-        "You are not allowed to view this client",
+        CLIENT_CONSTANT.INVALID_PERMISSION,
       );
     }
 
@@ -133,7 +171,7 @@ export const getSingleClient = async (req: CustomRequest, res: Response) => {
       res,
       STATUS_CODES.SUCCESS,
       client,
-      "Client fetched successfully",
+      CLIENT_CONSTANT.FETCHED,
     );
   } catch (err) {
     return ResponseUtil.handleError(res, err);
@@ -156,7 +194,7 @@ export const updateClient = async (req: CustomRequest, res: Response) => {
       return ResponseUtil.errorResponse(
         res,
         STATUS_CODES.NOT_FOUND,
-        "Client not found",
+        CLIENT_CONSTANT.NOT_FOUND,
       );
     }
 
@@ -173,7 +211,7 @@ export const updateClient = async (req: CustomRequest, res: Response) => {
       res,
       STATUS_CODES.SUCCESS,
       safeClient,
-      "Client updated successfully",
+      CLIENT_CONSTANT.UPDATED,
     );
   } catch (err) {
     return ResponseUtil.handleError(res, err);
@@ -195,7 +233,7 @@ export const deleteClient = async (req: CustomRequest, res: Response) => {
       return ResponseUtil.errorResponse(
         res,
         STATUS_CODES.NOT_FOUND,
-        "Client not found or you are not allowed to delete this client",
+        CLIENT_CONSTANT.NOT_FOUND_OR_NOT_ALLOWED,
       );
     }
 
@@ -206,54 +244,7 @@ export const deleteClient = async (req: CustomRequest, res: Response) => {
       res,
       STATUS_CODES.SUCCESS,
       {},
-      "Client deleted successfully",
-    );
-  } catch (err) {
-    return ResponseUtil.handleError(res, err);
-  }
-};
-
-export const clientLogin = async (req: Request, res: Response) => {
-  try {
-    const { email, password } = req.body;
-
-    const user = await UserModel.findOne({
-      email,
-      role: "CLIENT",
-      status: "ACTIVE",
-    });
-
-    if (!user) {
-      return ResponseUtil.errorResponse(
-        res,
-        STATUS_CODES.BAD_REQUEST,
-        "Invalid credentials",
-      );
-    }
-
-    const isPasswordValid = compareSync(password, String(user.password));
-
-    if (!isPasswordValid) {
-      return ResponseUtil.errorResponse(
-        res,
-        STATUS_CODES.BAD_REQUEST,
-        AUTH_CONSTANTS.PASSWORD_MISMATCH,
-      );
-    }
-
-    const token = generateToken({
-      id: String(user._id),
-      email: user.email!,
-      role: user.role,
-    });
-
-    const { password: _, ...safeUser } = user.toObject();
-
-    return ResponseUtil.successResponse(
-      res,
-      STATUS_CODES.SUCCESS,
-      { user: safeUser, token },
-      "Client logged in successfully",
+      CLIENT_CONSTANT.DELETED,
     );
   } catch (err) {
     return ResponseUtil.handleError(res, err);

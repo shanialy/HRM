@@ -8,14 +8,15 @@ import {
 } from "../controllers/authorizationController";
 import { checkAuth } from "../middleware/checkAuth";
 import { validate } from "../middleware/validate";
-import {
-  changeEmployeeStatusSchema,
-  createEmployeeSchema,
-  getAllEmployeesSchema,
-  getEmployeeByIdSchema,
-  updateEmployeeSchema,
-} from "../validators/authValidators";
+
 import role from "../middleware/checkRole";
+import {
+  AllEmployeesSchema,
+  createEmployeeSchema,
+  EmployeeByIdSchema,
+  EmployeeStatusSchema,
+  updateEmployeeSchema,
+} from "../validators/employeeValidators";
 
 const router = Router();
 
@@ -31,7 +32,7 @@ router.get(
   "/getAllEmployees",
   checkAuth,
   role("ADMIN"),
-  validate(getAllEmployeesSchema),
+  validate(AllEmployeesSchema),
   getAllEmployees,
 );
 
@@ -39,7 +40,7 @@ router.get(
   "/employees/:id",
   checkAuth,
   role("ADMIN"),
-  validate(getEmployeeByIdSchema),
+  validate(EmployeeByIdSchema),
   getEmployeeById,
 );
 
@@ -55,7 +56,7 @@ router.patch(
   "/employees/:id",
   checkAuth,
   role("ADMIN"),
-  validate(changeEmployeeStatusSchema),
+  validate(EmployeeStatusSchema),
   changeEmployeeStatus,
 );
 

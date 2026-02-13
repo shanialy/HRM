@@ -5,18 +5,16 @@ import {
   getSingleClient,
   updateClient,
   deleteClient,
-  clientLogin,
 } from "../controllers/clientController";
 import { checkAuth } from "../middleware/checkAuth";
 import { validate } from "../middleware/validate";
 import {
   createClientSchema,
-  getMyClientsSchema,
-  getSingleClientSchema,
   updateClientSchema,
   deleteClientSchema,
-  clientLoginSchema,
-} from "../validators/authValidators";
+  getClientsSchema,
+  SingleClientSchema,
+} from "../validators/clientValidators";
 import role from "../middleware/checkRole";
 
 const router = Router();
@@ -33,7 +31,7 @@ router.get(
   "/myclients",
   checkAuth,
   role("EMPLOYEE", "SALES"),
-  validate(getMyClientsSchema),
+  validate(getClientsSchema),
   getMyClients,
 );
 
@@ -41,7 +39,7 @@ router.get(
   "/clients/:id",
   checkAuth,
   role("EMPLOYEE", "SALES"),
-  validate(getSingleClientSchema),
+  validate(SingleClientSchema),
   getSingleClient,
 );
 
@@ -60,7 +58,5 @@ router.delete(
   validate(deleteClientSchema),
   deleteClient,
 );
-
-router.post("/client-login", validate(clientLoginSchema), clientLogin);
 
 export default router;

@@ -2,6 +2,7 @@ import { Response } from "express";
 import ResponseUtil from "../utils/Response/responseUtils";
 import { STATUS_CODES } from "../constants/statusCodes";
 import { AttendanceModel } from "../models/attendanceModel";
+import { ATTENDANCE_CONSTANT } from "../constants/attendance";
 
 export const checkInCheckOut = async (req: any, res: Response) => {
   try {
@@ -26,7 +27,7 @@ export const checkInCheckOut = async (req: any, res: Response) => {
         return ResponseUtil.errorResponse(
           res,
           STATUS_CODES.BAD_REQUEST,
-          "Already checked in for this day",
+          ATTENDANCE_CONSTANT.ALREADY_CHECKEDIN,
         );
       }
 
@@ -46,7 +47,7 @@ export const checkInCheckOut = async (req: any, res: Response) => {
         res,
         STATUS_CODES.SUCCESS,
         { attendance },
-        "Checked in successfully",
+        ATTENDANCE_CONSTANT.CHECKIN_SUCCESS,
       );
     }
 
@@ -56,7 +57,7 @@ export const checkInCheckOut = async (req: any, res: Response) => {
         return ResponseUtil.errorResponse(
           res,
           STATUS_CODES.BAD_REQUEST,
-          "Check-in not found for this day",
+          ATTENDANCE_CONSTANT.CHECKIN_NOT_FOUND,
         );
       }
 
@@ -64,7 +65,7 @@ export const checkInCheckOut = async (req: any, res: Response) => {
         return ResponseUtil.errorResponse(
           res,
           STATUS_CODES.BAD_REQUEST,
-          "Already checked out for this day",
+          ATTENDANCE_CONSTANT.ALREADY_CHECKEDOUT,
         );
       }
 
@@ -77,7 +78,7 @@ export const checkInCheckOut = async (req: any, res: Response) => {
         res,
         STATUS_CODES.SUCCESS,
         { attendance: todayAttendance },
-        "Checked out successfully",
+        ATTENDANCE_CONSTANT.CHECKOUT_SUCCESS,
       );
     }
   } catch (err) {
@@ -125,7 +126,7 @@ export const getMyAttendance = async (req: any, res: Response) => {
           totalPages: Math.ceil(totalAttendance / limit),
         },
       },
-      "My attendance fetched successfully",
+      ATTENDANCE_CONSTANT.FETCHED,
     );
   } catch (err) {
     return ResponseUtil.handleError(res, err);
@@ -189,7 +190,7 @@ export const adminGetAllAttendance = async (req: any, res: Response) => {
           totalPages: Math.ceil(totalAttendance / limit),
         },
       },
-      "Attendance fetched successfully",
+      ATTENDANCE_CONSTANT.FETCHED,
     );
   } catch (err) {
     return ResponseUtil.handleError(res, err);
@@ -211,7 +212,7 @@ export const requestLeave = async (req: any, res: Response) => {
       return ResponseUtil.errorResponse(
         res,
         STATUS_CODES.BAD_REQUEST,
-        "Attendance or leave already exists for this date",
+        ATTENDANCE_CONSTANT.ALREADY_EXISTS,
       );
     }
 
@@ -233,7 +234,7 @@ export const requestLeave = async (req: any, res: Response) => {
       res,
       STATUS_CODES.SUCCESS,
       { leave },
-      "Leave requested successfully",
+      ATTENDANCE_CONSTANT.SUCCESSFULL,
     );
   } catch (err) {
     return ResponseUtil.handleError(res, err);
@@ -254,7 +255,7 @@ export const approveRejectLeave = async (req: any, res: Response) => {
       return ResponseUtil.errorResponse(
         res,
         STATUS_CODES.NOT_FOUND,
-        "Leave record not found",
+        ATTENDANCE_CONSTANT.RECORD_NOTFOUND,
       );
     }
 
@@ -266,8 +267,8 @@ export const approveRejectLeave = async (req: any, res: Response) => {
       STATUS_CODES.SUCCESS,
       { leave },
       status === "APPROVED"
-        ? "Leave approved successfully"
-        : "Leave rejected successfully",
+        ? ATTENDANCE_CONSTANT.APPROVED
+        : ATTENDANCE_CONSTANT.REJECT,
     );
   } catch (err) {
     return ResponseUtil.handleError(res, err);
