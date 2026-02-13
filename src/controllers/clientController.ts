@@ -13,38 +13,16 @@ import { UserModel } from "../models/userModel";
 import { CustomRequest } from "../interfaces/auth";
 import mongoose from "mongoose";
 
-
-
-
-export const createClinet = async (req: any, res: Response) => {
+export const createClient = async (req: any, res: Response) => {
   try {
-
-    console.log(req.role, req.department);
-
-  
-    if (
-      req.role !== "EMPLOYEE" ||
-      req.department !== "SALES"
-    ) {
-      return ResponseUtil.errorResponse(
-        res,
-        STATUS_CODES.FORBIDDEN,
-        "Only sales employee can create client"
-      );
-    }
-
     const { firstName, lastName, email, address, phone } = req.body;
 
-    
-    const genpassword = generateRandomPassword();
+    // generate password
+    const genPassword = generateRandomPassword();
 
-  
-    const hashedPassword = await hash(
-      genpassword,
-      String(AuthConfig.SALT)
-    );
+    const hashedPassword = await hash(genPassword, String(AuthConfig.SALT));
 
-    
+    // create user
     const user = await UserModel.create({
       firstName,
       lastName,
@@ -52,55 +30,38 @@ export const createClinet = async (req: any, res: Response) => {
       phone,
       email,
       password: hashedPassword,
-      role: "CLIENT",               
+      role: "CLIENT",
       createdBy: req.userId,
       assignedEmployee: req.userId,
       status: "ACTIVE",
     });
 
-    
+    // send email
     const template = emailTemplateGeneric(
       "Welcome to the TSH Services",
-      "User",
+      firstName,
       email,
-      genpassword                 
+      genPassword,
     );
 
-    await sendEmail(
-      email,
-      "Your account has been created",
-      template
+    await sendEmail(email, "Your account has been created", template);
+
+    const clientResponse: any = user.toObject();
+    delete clientResponse.password;
+
+    return ResponseUtil.successResponse(
+      res,
+      STATUS_CODES.SUCCESS,
+      clientResponse,
+      "Client created successfully",
     );
-
-  const clientResponse:any = user.toObject();
-  delete clientResponse.password;
-
-return ResponseUtil.successResponse(
-  res,
-  STATUS_CODES.SUCCESS,
-  clientResponse,
-  "Created successfully"
-);
-
-
-    
   } catch (err) {
     return ResponseUtil.handleError(res, err);
   }
 };
 
-
 export const getMyClients = async (req: CustomRequest, res: Response) => {
   try {
-    if (req.role !== "EMPLOYEE" || req.department !== "SALES") {
-      return ResponseUtil.errorResponse(
-        res,
-        STATUS_CODES.FORBIDDEN,
-        "Only sales employee can view clients"
-      );
-    }
-
-    
     const page = Number(req.query.page) || 1;
     const limit = Number(req.query.limit) || 10;
     const skip = (page - 1) * limit;
@@ -111,15 +72,15 @@ export const getMyClients = async (req: CustomRequest, res: Response) => {
       status: "ACTIVE",
     };
 
-    
-    const clients = await UserModel.find(filter)
-      .select("firstName lastName email address phone status createdAt")
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
+    const [clients, totalClients] = await Promise.all([
+      UserModel.find(filter)
+        .select("firstName lastName email address phone status createdAt")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
 
-    
-    const totalClients = await UserModel.countDocuments(filter);
+      UserModel.countDocuments(filter),
+    ]);
 
     return ResponseUtil.successResponse(
       res,
@@ -133,58 +94,38 @@ export const getMyClients = async (req: CustomRequest, res: Response) => {
           totalPages: Math.ceil(totalClients / limit),
         },
       },
-      "Clients fetched successfully"
+      "Clients fetched successfully",
     );
   } catch (err) {
     return ResponseUtil.handleError(res, err);
   }
 };
 
-
 export const getSingleClient = async (req: CustomRequest, res: Response) => {
   try {
-   
-    if (req.role !== "EMPLOYEE" || req.department !== "SALES") {
-      return ResponseUtil.errorResponse(
-        res,
-        STATUS_CODES.FORBIDDEN,
-        "Only sales employee can view client"
-      );
-    }
-const clientId = req.params.id;
+    const clientId = req.params.id;
 
-   
-    if (!mongoose.Types.ObjectId.isValid(clientId)) {
-      return ResponseUtil.errorResponse(
-        res,
-        STATUS_CODES.BAD_REQUEST,
-        "Invalid client id"
-      );
-    }
-
-   
     const client = await UserModel.findOne({
       _id: clientId,
       role: "CLIENT",
       status: "ACTIVE",
     }).select(
-      "firstName lastName email address phone status createdBy createdAt"
+      "firstName lastName email address phone status createdBy createdAt",
     );
 
     if (!client) {
       return ResponseUtil.errorResponse(
         res,
         STATUS_CODES.NOT_FOUND,
-        "Client not found"
+        "Client not found",
       );
     }
 
-    
     if (String(client.createdBy) !== String(req.userId)) {
       return ResponseUtil.errorResponse(
         res,
         STATUS_CODES.FORBIDDEN,
-        "You are not allowed to view this client"
+        "You are not allowed to view this client",
       );
     }
 
@@ -192,7 +133,7 @@ const clientId = req.params.id;
       res,
       STATUS_CODES.SUCCESS,
       client,
-      "Client fetched successfully"
+      "Client fetched successfully",
     );
   } catch (err) {
     return ResponseUtil.handleError(res, err);
@@ -201,66 +142,38 @@ const clientId = req.params.id;
 
 export const updateClient = async (req: CustomRequest, res: Response) => {
   try {
-  
-    if (req.role !== "EMPLOYEE" || req.department !== "SALES") {
-      return ResponseUtil.errorResponse(
-        res,
-        STATUS_CODES.FORBIDDEN,
-        "Only sales employee can update client"
-      );
-    }
-
     const clientId = req.params.id;
+    const { firstName, lastName, email, city } = req.body;
 
-    
-    if (!mongoose.Types.ObjectId.isValid(clientId)) {
-      return ResponseUtil.errorResponse(
-        res,
-        STATUS_CODES.BAD_REQUEST,
-        "Invalid client id"
-      );
-    }
-
-   
     const client = await UserModel.findOne({
       _id: clientId,
       role: "CLIENT",
       status: "ACTIVE",
+      createdBy: req.userId, // 🔥 authorization handled in query
     });
 
     if (!client) {
       return ResponseUtil.errorResponse(
         res,
         STATUS_CODES.NOT_FOUND,
-        "Client not found"
+        "Client not found",
       );
     }
-
-   
-    if (String(client.createdBy) !== String(req.userId)) {
-      return ResponseUtil.errorResponse(
-        res,
-        STATUS_CODES.FORBIDDEN,
-        "You are not allowed to update this client"
-      );
-    }
-
-    
-    const { firstName, lastName, email, city } = req.body;
 
     if (firstName !== undefined) client.firstName = firstName;
     if (lastName !== undefined) client.lastName = lastName;
     if (email !== undefined) client.email = email;
-    if (city !== undefined) client.address = city; 
+    if (city !== undefined) client.address = city;
 
     await client.save();
-const { password, ...safeClient } = client.toObject();
+
+    const { password, ...safeClient } = client.toObject();
 
     return ResponseUtil.successResponse(
       res,
       STATUS_CODES.SUCCESS,
       safeClient,
-      "Client updated successfully"
+      "Client updated successfully",
     );
   } catch (err) {
     return ResponseUtil.handleError(res, err);
@@ -269,45 +182,20 @@ const { password, ...safeClient } = client.toObject();
 
 export const deleteClient = async (req: CustomRequest, res: Response) => {
   try {
-    
-    if (req.role !== "EMPLOYEE" || req.department !== "SALES") {
-      return ResponseUtil.errorResponse(
-        res,
-        STATUS_CODES.FORBIDDEN,
-        "Only sales employee can delete client"
-      );
-    }
-
     const clientId = req.params.id;
-
-   
-    if (!mongoose.Types.ObjectId.isValid(clientId)) {
-      return ResponseUtil.errorResponse(
-        res,
-        STATUS_CODES.BAD_REQUEST,
-        "Invalid client id"
-      );
-    }
 
     const client = await UserModel.findOne({
       _id: clientId,
       role: "CLIENT",
       status: "ACTIVE",
+      createdBy: req.userId,
     });
 
     if (!client) {
       return ResponseUtil.errorResponse(
         res,
         STATUS_CODES.NOT_FOUND,
-        "Client not found"
-      );
-    }
-
-    if (String(client.createdBy) !== String(req.userId)) {
-      return ResponseUtil.errorResponse(
-        res,
-        STATUS_CODES.FORBIDDEN,
-        "You are not allowed to delete this client"
+        "Client not found or you are not allowed to delete this client",
       );
     }
 
@@ -318,7 +206,7 @@ export const deleteClient = async (req: CustomRequest, res: Response) => {
       res,
       STATUS_CODES.SUCCESS,
       {},
-      "Client deleted successfully"
+      "Client deleted successfully",
     );
   } catch (err) {
     return ResponseUtil.handleError(res, err);
@@ -328,14 +216,6 @@ export const deleteClient = async (req: CustomRequest, res: Response) => {
 export const clientLogin = async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
-
-    if (!email || !password) {
-      return ResponseUtil.errorResponse(
-        res,
-        STATUS_CODES.BAD_REQUEST,
-        "Email and password are required"
-      );
-    }
 
     const user = await UserModel.findOne({
       email,
@@ -347,14 +227,13 @@ export const clientLogin = async (req: Request, res: Response) => {
       return ResponseUtil.errorResponse(
         res,
         STATUS_CODES.BAD_REQUEST,
-        "Invalid credentials"
+        "Invalid credentials",
       );
     }
 
-   const hashpass = compareSync(password, String(user.password));
-   
+    const isPasswordValid = compareSync(password, String(user.password));
 
-    if (!hashpass) {
+    if (!isPasswordValid) {
       return ResponseUtil.errorResponse(
         res,
         STATUS_CODES.BAD_REQUEST,
@@ -362,13 +241,11 @@ export const clientLogin = async (req: Request, res: Response) => {
       );
     }
 
-    
-   const token = generateToken({
-  id: String(user._id),
-  email: user.email!, 
-  role: user.role,
-});
-
+    const token = generateToken({
+      id: String(user._id),
+      email: user.email!,
+      role: user.role,
+    });
 
     const { password: _, ...safeUser } = user.toObject();
 
@@ -376,7 +253,7 @@ export const clientLogin = async (req: Request, res: Response) => {
       res,
       STATUS_CODES.SUCCESS,
       { user: safeUser, token },
-      "Client logged in successfully"
+      "Client logged in successfully",
     );
   } catch (err) {
     return ResponseUtil.handleError(res, err);

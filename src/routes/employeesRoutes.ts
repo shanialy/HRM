@@ -3,26 +3,60 @@ import {
   createEmployee,
   getAllEmployees,
   getEmployeeById,
-  getSingleEmployee,
   changeEmployeeStatus,
   updateEmployee,
 } from "../controllers/authorizationController";
 import { checkAuth } from "../middleware/checkAuth";
 import { validate } from "../middleware/validate";
-import { employeeStatus } from "../validators/authValidators";
+import {
+  changeEmployeeStatusSchema,
+  createEmployeeSchema,
+  getAllEmployeesSchema,
+  getEmployeeByIdSchema,
+  updateEmployeeSchema,
+} from "../validators/authValidators";
 import role from "../middleware/checkRole";
 
 const router = Router();
 
-router.post("/createEmployee", checkAuth, role("ADMIN"), createEmployee);
-router.get("/getAllEmployees", checkAuth, role("ADMIN"), getAllEmployees);
-router.get("/getEmployee/:id", checkAuth, getEmployeeById);
-router.get("/employees/:id", checkAuth, getSingleEmployee);
-router.put("/employees/:id", checkAuth, updateEmployee);
-router.patch(
-  "/employees/:id/status",
+router.post(
+  "/createEmployee",
   checkAuth,
-  validate(employeeStatus),
+  role("ADMIN"),
+  validate(createEmployeeSchema),
+  createEmployee,
+);
+
+router.get(
+  "/getAllEmployees",
+  checkAuth,
+  role("ADMIN"),
+  validate(getAllEmployeesSchema),
+  getAllEmployees,
+);
+
+router.get(
+  "/employees/:id",
+  checkAuth,
+  role("ADMIN"),
+  validate(getEmployeeByIdSchema),
+  getEmployeeById,
+);
+
+router.put(
+  "/employees/:id",
+  checkAuth,
+  role("ADMIN"),
+  validate(updateEmployeeSchema),
+  updateEmployee,
+);
+
+router.patch(
+  "/employees/:id",
+  checkAuth,
+  role("ADMIN"),
+  validate(changeEmployeeStatusSchema),
   changeEmployeeStatus,
 );
+
 export default router;

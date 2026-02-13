@@ -84,7 +84,7 @@ export const getProfile = async (req: CustomRequest, res: Response) => {
   }
 };
 
-export const createEmployee = async (req: any, res: Response) => {
+export const createEmployee = async (req: CustomRequest, res: Response) => {
   try {
     const {
       firstName,
@@ -99,14 +99,7 @@ export const createEmployee = async (req: any, res: Response) => {
       address,
     } = req.body;
 
-    if (!firstName || !lastName || !email) {
-      return ResponseUtil.errorResponse(
-        res,
-        STATUS_CODES.BAD_REQUEST,
-        "Required fields are missing",
-      );
-    }
-
+    // 🔎 Check existing user
     const existing = await UserModel.findOne({ email });
     if (existing) {
       return ResponseUtil.errorResponse(
@@ -116,7 +109,9 @@ export const createEmployee = async (req: any, res: Response) => {
       );
     }
 
-    const hashedPassword = await hash("Password@12", String(AuthConfig.SALT));
+    // 🔐 Default password
+    const defaultPassword = "Password@12";
+    const hashedPassword = await hash(defaultPassword, Number(AuthConfig.SALT));
 
     const employee = await UserModel.create({
       firstName,
@@ -128,17 +123,20 @@ export const createEmployee = async (req: any, res: Response) => {
       department,
       phone,
       address,
-      userType,
+      userType, // jo bhi value aaye save ho
       salary,
-      targetAmount: userType === "SALES" ? targetAmount || 0 : 0,
+      targetAmount, // direct save, no condition
       createdBy: req.userId,
       status: "ACTIVE",
     });
 
+    const employeeObj = employee.toObject();
+    const { password, ...employeeWithoutPassword } = employeeObj;
+
     return ResponseUtil.successResponse(
       res,
       STATUS_CODES.SUCCESS,
-      { employee },
+      { employee: employeeWithoutPassword },
       "Employee created successfully",
     );
   } catch (err) {
@@ -146,7 +144,7 @@ export const createEmployee = async (req: any, res: Response) => {
   }
 };
 
-export const getAllEmployees = async (req: any, res: Response) => {
+export const getAllEmployees = async (req: CustomRequest, res: Response) => {
   try {
     const page = Number(req.query.page) || 1;
     const limit = Number(req.query.limit) || 5;
@@ -222,51 +220,9 @@ export const getEmployeeById = async (req: any, res: Response) => {
     return ResponseUtil.handleError(res, err);
   }
 };
-
-export const getSingleEmployee = async (req: any, res: Response) => {
-  try {
-    const { id } = req.params;
-
-    if (req.role !== "ADMIN") {
-      return ResponseUtil.errorResponse(
-        res,
-        STATUS_CODES.FORBIDDEN,
-        "Access denied",
-      );
-    }
-
-    const employee = await UserModel.findById(id).select("-password");
-
-    if (!employee) {
-      return ResponseUtil.errorResponse(
-        res,
-        STATUS_CODES.NOT_FOUND,
-        "Employee not found",
-      );
-    }
-
-    return ResponseUtil.successResponse(
-      res,
-      STATUS_CODES.SUCCESS,
-      { employee },
-      "Employee fetched successfully",
-    );
-  } catch (err) {
-    return ResponseUtil.handleError(res, err);
-  }
-};
-
 export const updateEmployee = async (req: any, res: Response) => {
   try {
     const { id } = req.params;
-
-    if (req.role !== "ADMIN") {
-      return ResponseUtil.errorResponse(
-        res,
-        STATUS_CODES.FORBIDDEN,
-        "Access denied",
-      );
-    }
 
     const updatedEmployee = await UserModel.findOneAndUpdate(
       { _id: id, role: "EMPLOYEE" },
@@ -296,23 +252,14 @@ export const updateEmployee = async (req: any, res: Response) => {
 export const changeEmployeeStatus = async (req: any, res: Response) => {
   try {
     const { id } = req.params;
-    const { status } = req.body;
 
-    if (req.role !== "ADMIN") {
-      return ResponseUtil.errorResponse(
-        res,
-        STATUS_CODES.FORBIDDEN,
-        "Access denied",
-      );
-    }
-
-    const employee = await UserModel.findOneAndUpdate(
+    const updatedEmployee = await UserModel.findOneAndUpdate(
       { _id: id, role: "EMPLOYEE" },
-      { status },
+      { $set: req.body },
       { new: true },
     ).select("-password");
 
-    if (!employee) {
+    if (!updatedEmployee) {
       return ResponseUtil.errorResponse(
         res,
         STATUS_CODES.NOT_FOUND,
@@ -323,8 +270,8 @@ export const changeEmployeeStatus = async (req: any, res: Response) => {
     return ResponseUtil.successResponse(
       res,
       STATUS_CODES.SUCCESS,
-      { employee },
-      "Employee status updated successfully",
+      { employee: updatedEmployee },
+      "Employee updated successfully",
     );
   } catch (err) {
     return ResponseUtil.handleError(res, err);

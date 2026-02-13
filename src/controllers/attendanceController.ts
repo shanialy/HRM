@@ -7,33 +7,8 @@ export const checkInCheckOut = async (req: any, res: Response) => {
   try {
     const { type, dateTime, notes } = req.body;
 
-    if (req.role !== "EMPLOYEE") {
-      return ResponseUtil.errorResponse(
-        res,
-        STATUS_CODES.FORBIDDEN,
-        "Only employees can mark attendance",
-      );
-    }
-
-    if (!type || !["CHECK_IN", "CHECK_OUT"].includes(type)) {
-      return ResponseUtil.errorResponse(
-        res,
-        STATUS_CODES.BAD_REQUEST,
-        "Invalid attendance type",
-      );
-    }
-
-    if (!dateTime) {
-      return ResponseUtil.errorResponse(
-        res,
-        STATUS_CODES.BAD_REQUEST,
-        "dateTime is required",
-      );
-    }
-
     const providedDate = new Date(dateTime);
 
-    // Day boundaries FROM PROVIDED DATE (not server time)
     const startOfDay = new Date(providedDate);
     startOfDay.setHours(0, 0, 0, 0);
 
@@ -85,7 +60,7 @@ export const checkInCheckOut = async (req: any, res: Response) => {
         );
       }
 
-      if (todayAttendance && todayAttendance?.time?.checkOut) {
+      if (todayAttendance?.time?.checkOut) {
         return ResponseUtil.errorResponse(
           res,
           STATUS_CODES.BAD_REQUEST,
@@ -112,14 +87,6 @@ export const checkInCheckOut = async (req: any, res: Response) => {
 
 export const getMyAttendance = async (req: any, res: Response) => {
   try {
-    if (req.role !== "EMPLOYEE") {
-      return ResponseUtil.errorResponse(
-        res,
-        STATUS_CODES.FORBIDDEN,
-        "Only employees can view their attendance",
-      );
-    }
-
     const { month, year } = req.query;
 
     const page = Number(req.query.page) || 1;
@@ -131,31 +98,11 @@ export const getMyAttendance = async (req: any, res: Response) => {
     };
 
     if (month !== undefined) {
-      const monthNum = Number(month);
-
-      if (isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
-        return ResponseUtil.errorResponse(
-          res,
-          STATUS_CODES.BAD_REQUEST,
-          "Invalid month",
-        );
-      }
-
-      filter.month = monthNum;
+      filter.month = Number(month);
     }
 
     if (year !== undefined) {
-      const yearNum = Number(year);
-
-      if (isNaN(yearNum)) {
-        return ResponseUtil.errorResponse(
-          res,
-          STATUS_CODES.BAD_REQUEST,
-          "Invalid year",
-        );
-      }
-
-      filter.year = yearNum;
+      filter.year = Number(year);
     }
 
     const attendance = await AttendanceModel.find(filter)
@@ -187,13 +134,7 @@ export const getMyAttendance = async (req: any, res: Response) => {
 
 export const adminGetAllAttendance = async (req: any, res: Response) => {
   try {
-    if (req.role !== "ADMIN") {
-      return ResponseUtil.errorResponse(
-        res,
-        STATUS_CODES.FORBIDDEN,
-        "Only admin can view all attendance",
-      );
-    }
+    // ❌ REMOVED: Role check (handled by role middleware)
 
     const { employeeId, month, year, from, to } = req.query;
 
@@ -208,54 +149,22 @@ export const adminGetAllAttendance = async (req: any, res: Response) => {
     }
 
     if (month !== undefined) {
-      const monthNum = Number(month);
-      if (isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
-        return ResponseUtil.errorResponse(
-          res,
-          STATUS_CODES.BAD_REQUEST,
-          "Invalid month",
-        );
-      }
-      filter.month = monthNum;
+      filter.month = Number(month);
     }
 
     if (year !== undefined) {
-      const yearNum = Number(year);
-      if (isNaN(yearNum)) {
-        return ResponseUtil.errorResponse(
-          res,
-          STATUS_CODES.BAD_REQUEST,
-          "Invalid year",
-        );
-      }
-      filter.year = yearNum;
+      filter.year = Number(year);
     }
 
     if (from || to) {
       filter.date = {};
 
       if (from) {
-        const fromDate = new Date(from);
-        if (isNaN(fromDate.getTime())) {
-          return ResponseUtil.errorResponse(
-            res,
-            STATUS_CODES.BAD_REQUEST,
-            "Invalid from date",
-          );
-        }
-        filter.date.$gte = fromDate;
+        filter.date.$gte = new Date(from);
       }
 
       if (to) {
-        const toDate = new Date(to);
-        if (isNaN(toDate.getTime())) {
-          return ResponseUtil.errorResponse(
-            res,
-            STATUS_CODES.BAD_REQUEST,
-            "Invalid to date",
-          );
-        }
-        filter.date.$lte = toDate;
+        filter.date.$lte = new Date(to);
       }
     }
 
@@ -286,36 +195,13 @@ export const adminGetAllAttendance = async (req: any, res: Response) => {
     return ResponseUtil.handleError(res, err);
   }
 };
+
 export const requestLeave = async (req: any, res: Response) => {
   try {
-    if (req.role !== "EMPLOYEE") {
-      return ResponseUtil.errorResponse(
-        res,
-        STATUS_CODES.FORBIDDEN,
-        "Only employees can request leave",
-      );
-    }
-
     const { date, notes } = req.body;
 
-    if (!date) {
-      return ResponseUtil.errorResponse(
-        res,
-        STATUS_CODES.BAD_REQUEST,
-        "Leave date is required",
-      );
-    }
-
     const leaveDate = new Date(date);
-    if (isNaN(leaveDate.getTime())) {
-      return ResponseUtil.errorResponse(
-        res,
-        STATUS_CODES.BAD_REQUEST,
-        "Invalid leave date",
-      );
-    }
 
-    // NO server-side time calculation
     const existing = await AttendanceModel.findOne({
       user: req.userId,
       date: leaveDate,
@@ -338,7 +224,7 @@ export const requestLeave = async (req: any, res: Response) => {
       status: "PENDING",
       notes,
       time: {
-        checkIn: leaveDate, // required by schema, logical value not used
+        checkIn: leaveDate,
         checkOut: null,
       },
     });
@@ -356,24 +242,8 @@ export const requestLeave = async (req: any, res: Response) => {
 
 export const approveRejectLeave = async (req: any, res: Response) => {
   try {
-    if (req.role !== "ADMIN") {
-      return ResponseUtil.errorResponse(
-        res,
-        STATUS_CODES.FORBIDDEN,
-        "Only admin can approve or reject leave",
-      );
-    }
-
     const { id } = req.params;
     const { status } = req.body;
-
-    if (!["APPROVED", "REJECTED"].includes(status)) {
-      return ResponseUtil.errorResponse(
-        res,
-        STATUS_CODES.BAD_REQUEST,
-        "status must be APPROVED or REJECTED",
-      );
-    }
 
     const leave = await AttendanceModel.findOne({
       _id: id,
