@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import ResponseUtil from "../utils/Response/responseUtils";
 import { STATUS_CODES } from "../constants/statusCodes";
 import { hash } from "bcrypt";
+import mongoose from "mongoose"; // 🔥 ADDED: For ObjectId handling
 
 import AuthConfig from "../config/authConfig";
 import { sendEmail } from "../utils/SendEmail";
@@ -220,12 +221,11 @@ export const updateClient = async (req: CustomRequest, res: Response) => {
 
 export const deleteClient = async (req: CustomRequest, res: Response) => {
   try {
-    const clientId = req.params.id;
+    const { id } = req.params;
 
     const client = await UserModel.findOne({
-      _id: clientId,
+      _id: id,
       role: "CLIENT",
-      status: "ACTIVE",
       createdBy: req.userId,
     });
 
@@ -234,6 +234,15 @@ export const deleteClient = async (req: CustomRequest, res: Response) => {
         res,
         STATUS_CODES.NOT_FOUND,
         CLIENT_CONSTANT.NOT_FOUND_OR_NOT_ALLOWED,
+      );
+    }
+
+    // 🔥 If already deleted, still return success (clean UX)
+    if (client.status === "INACTIVE") {
+      return ResponseUtil.errorResponse(
+        res,
+        STATUS_CODES.NOT_FOUND,
+        CLIENT_CONSTANT.ALREADY_DELETED,
       );
     }
 

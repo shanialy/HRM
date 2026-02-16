@@ -3,14 +3,15 @@ import dotenv from "dotenv";
 import morgan from "morgan";
 import morganBody from "morgan-body";
 import { connectDB } from "./config/db";
-import swaggerJSDoc from "swagger-jsdoc";
+import { swaggerSpec } from "./config/swagger";
+
 import swaggerUi from "swagger-ui-express";
 import authorizationRoutes from "./routes/authorizationRoutes";
-import employeeRoutes from "./routes/employeesRoutes"
-import attendanceRoutes from "./routes/attendanceRoutes"
-import clientRoutes from "./routes/clientRoutes"
+import employeeRoutes from "./routes/employeesRoutes";
+import attendanceRoutes from "./routes/attendanceRoutes";
+import clientRoutes from "./routes/clientRoutes";
 // import userRoutes from "./routes/userRoutes";
-import swaggerOptions from "./config/swagger";
+
 import express, { Request, Response } from "express";
 import { API_PREFIX } from "./config/environment";
 
@@ -22,8 +23,6 @@ connectDB();
 app.get("/", (req: Request, res: Response) => {
   return res.json({ message: "Welcome to TSH HRM APIs" });
 });
-
-const swaggerSpec = swaggerJSDoc(swaggerOptions);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

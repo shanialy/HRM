@@ -190,7 +190,7 @@ export const adminGetAllAttendance = async (req: any, res: Response) => {
           totalPages: Math.ceil(totalAttendance / limit),
         },
       },
-      ATTENDANCE_CONSTANT.FETCHED,
+      ATTENDANCE_CONSTANT.ADMIN_FETCHED,
     );
   } catch (err) {
     return ResponseUtil.handleError(res, err);

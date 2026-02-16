@@ -8,5 +8,6 @@ export const CLIENT_CONSTANT = {
   UPDATED: "Client updated successfully",
   NOT_FOUND_OR_NOT_ALLOWED:
     "Client not found or you are not allowed to delete this client",
-  DELETED: "Client not found or you are not allowed to delete this client",
+  DELETED: "Client deleted successfully",
+  ALREADY_DELETED: "ALREADY DELETED",
 };

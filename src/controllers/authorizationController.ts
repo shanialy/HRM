@@ -173,7 +173,7 @@ export const getAllEmployees = async (req: CustomRequest, res: Response) => {
           totalPages: Math.ceil(totalEmployees / limit),
         },
       },
-      EMPLOYEE_CONSTANT.FETCHED,
+      EMPLOYEE_CONSTANT.FETCHED_ALL,
     );
   } catch (err) {
     return ResponseUtil.handleError(res, err);
@@ -183,13 +183,8 @@ export const getAllEmployees = async (req: CustomRequest, res: Response) => {
 // GET /employee/:id
 export const getEmployeeById = async (req: any, res: Response) => {
   try {
-    if (req.role !== "ADMIN") {
-      return ResponseUtil.errorResponse(
-        res,
-        STATUS_CODES.FORBIDDEN,
-        EMPLOYEE_CONSTANT.DENIED,
-      );
-    }
+    // ❌ REMOVED: Role check (already handled in route middleware)
+    // if (req.role !== "ADMIN") { ... }
 
     const { id } = req.params;
 
@@ -201,7 +196,11 @@ export const getEmployeeById = async (req: any, res: Response) => {
       );
     }
 
-    const employee = await UserModel.findById(id).select("-password");
+    // 🔥 CHANGED: Added role filter to ensure only EMPLOYEE is fetched
+    const employee = await UserModel.findOne({
+      _id: id,
+      role: "EMPLOYEE",
+    }).select("-password");
 
     if (!employee) {
       return ResponseUtil.errorResponse(
@@ -215,12 +214,13 @@ export const getEmployeeById = async (req: any, res: Response) => {
       res,
       STATUS_CODES.SUCCESS,
       { employee },
-      EMPLOYEE_CONSTANT.FETCHED,
+      EMPLOYEE_CONSTANT.FETCHED_ONE,
     );
   } catch (err) {
     return ResponseUtil.handleError(res, err);
   }
 };
+
 export const updateEmployee = async (req: any, res: Response) => {
   try {
     const { id } = req.params;
@@ -272,7 +272,7 @@ export const changeEmployeeStatus = async (req: any, res: Response) => {
       res,
       STATUS_CODES.SUCCESS,
       { employee: updatedEmployee },
-      EMPLOYEE_CONSTANT.UPDATED,
+      EMPLOYEE_CONSTANT.UPDATED_STATUS,
     );
   } catch (err) {
     return ResponseUtil.handleError(res, err);
