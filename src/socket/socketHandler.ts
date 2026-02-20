@@ -1,285 +1,269 @@
-import { Server } from "socket.io";
+import { Server, Socket } from "socket.io";
 import jwt from "jsonwebtoken";
-import { UserModel } from "../models/userModel";
-import { ChatModel } from "../models/chatModel";
+import mongoose from "mongoose";
 import { ConversationModel } from "../models/conversationModel";
+import { MessageModel } from "../models/messageModel";
+
+interface JwtPayload {
+  id: string;
+  email: string;
+  role: string;
+}
 
 const socketHandler = (io: Server) => {
-
-  // 🔐 JWT AUTH
-  io.use((socket: any, next) => {
+  // ======================================================
+  // 🔐 JWT AUTH MIDDLEWARE
+  // Every socket connection must provide valid token
+  // ======================================================
+  io.use((socket: Socket & { user?: JwtPayload }, next) => {
     try {
       const token =
-        socket.handshake.auth?.token ||
-        socket.handshake.query?.token;
+        socket.handshake.auth?.token || socket.handshake.query?.token;
 
-      if (!token) return next(new Error("Authentication error"));
+      if (!token) return next(new Error("Unauthorized"));
 
-      const decoded: any = jwt.verify(
-        token,
-        process.env.JWT_SECRET as string
-      );
+      const decoded = jwt.verify(
+        token as string,
+        process.env.JWT_SECRET as string,
+      ) as JwtPayload;
 
       socket.user = decoded;
       next();
-
     } catch {
-      next(new Error("Invalid token"));
+      next(new Error("Unauthorized"));
     }
   });
 
-  // 🔌 CONNECTION
-  io.on("connection", (socket: any) => {
+  // ======================================================
+  // 🔌 ON CONNECTION
+  // ======================================================
+  io.on("connection", async (socket: Socket & { user?: JwtPayload }) => {
+    const userId = socket.user!.id;
+    console.log("User connected:", userId);
 
-    console.log("User connected:", socket.user.id);
-    socket.join(socket.user.id);
+    // ------------------------------------------------------
+    // 🏠 Join personal room (used for direct notifications)
+    // ------------------------------------------------------
+    socket.join(userId);
 
-    // =========================================
-    // 📋 LOAD CONVERSATIONS (UNCHANGED)
-    // =========================================
-    socket.on("load-conversations", async (data: any) => {
-      try {
+    // ------------------------------------------------------
+    // 🏠 Join all existing conversation rooms
+    // So user receives live messages
+    // ------------------------------------------------------
+    const existingConversations = await ConversationModel.find({
+      participants: new mongoose.Types.ObjectId(userId),
+      isDisabled: false,
+    });
 
-        const currentUserId = socket.user.id;
-        const { page = 1, limit = 10 } = data;
-        const skip = (page - 1) * limit;
+    existingConversations.forEach((conv) => {
+      socket.join(conv._id.toString());
+    });
 
-        const conversations = await ConversationModel.find({
-          participants: currentUserId
-        })
-          .populate("participants", "name email role profileImage")
-          .sort({ lastMessageAt: -1 })
-          .skip(skip)
-          .limit(limit);
+    // ======================================================
+    // 🆕 CREATE CONVERSATION (if not exists)
+    // ======================================================
+    socket.on(
+      "createConversation",
+      async ({ receiverId }: { receiverId: string }) => {
+        console.log("🔥 createConversation triggered");
+        console.log("Sender:", userId);
+        console.log("Receiver:", receiverId);
+        try {
+          // Check if conversation already exists between 2 users
+          let conversation = await ConversationModel.findOne({
+            participants: {
+              $all: [
+                new mongoose.Types.ObjectId(userId),
+                new mongoose.Types.ObjectId(receiverId),
+              ],
+              $size: 2,
+            },
+          });
 
-        const totalConversations = await ConversationModel.countDocuments({
-          participants: currentUserId
-        });
+          // If not exists → create new
+          if (!conversation) {
+            conversation = await ConversationModel.create({
+              participants: [userId, receiverId],
+              lastMessage: "",
+              lastMessageType: "TEXT",
+              lastMessageAt: new Date(),
+              isDisabled: false,
+            });
+          }
 
-        const formatted = conversations.map((conv: any) => {
+          // Join both users into that room
+          socket.join(conversation._id.toString());
 
-          const unread =
-            conv.unreadCount?.get(currentUserId) || 0;
+          // Notify receiver
+          io.to(receiverId).emit("newConversation", {
+            conversationId: conversation._id,
+          });
 
-          const otherUser = conv.participants.find(
-            (p: any) => String(p._id) !== String(currentUserId)
+          socket.emit("conversationCreated", conversation);
+        } catch {
+          socket.emit("error", { message: "Failed to create conversation" });
+        }
+      },
+    );
+
+    // ======================================================
+    // 📜 LIST CONVERSATIONS (with pagination)
+    // WhatsApp home screen
+    // ======================================================
+    socket.on(
+      "conversations",
+      async ({ page = 1, limit = 10 }: { page?: number; limit?: number }) => {
+        try {
+          const skip = (page - 1) * limit;
+
+          const convs = await ConversationModel.find({
+            participants: new mongoose.Types.ObjectId(userId),
+            isDisabled: false,
+          })
+            .populate("participants", "firstName lastName role profilePicture")
+            .sort({ lastMessageAt: -1 }) // latest chat first
+            .skip(skip)
+            .limit(limit)
+            .lean();
+
+          // Calculate unread count for each conversation
+          const formatted = await Promise.all(
+            convs.map(async (conv: any) => {
+              const unreadCount = await MessageModel.countDocuments({
+                conversation: conv._id,
+                sender: { $ne: userId },
+                readBy: { $ne: userId },
+              });
+
+              return {
+                ...conv,
+                unreadCount,
+              };
+            }),
           );
 
-          return {
-            _id: conv._id,
-            user: otherUser,
-            lastMessage: conv.lastMessage,
-            lastMessageType: conv.lastMessageType,
-            lastMessageAt: conv.lastMessageAt,
-            unreadCount: unread
-          };
-        });
-
-        socket.emit("conversation-list", {
-          conversations: formatted,
-          pagination: {
-            totalConversations,
-            currentPage: page,
-            totalPages: Math.ceil(totalConversations / limit),
-            hasMore: page < Math.ceil(totalConversations / limit)
-          }
-        });
-
-      } catch (error) {
-        console.log("Load conversations error:", error);
-      }
-    });
-
-    // =========================================
-    // 👀 RESET UNREAD (UNCHANGED + SAFETY)
-    // =========================================
-    socket.on("reset-unread", async (data: any) => {
-      try {
-
-        const currentUserId = socket.user.id;
-        const { otherUserId } = data;
-
-        const conversation: any = await ConversationModel.findOne({
-          participants: { $all: [currentUserId, otherUserId] }
-        });
-
-        if (!conversation) return;
-
-        if (!conversation.unreadCount) {      // 🔥 ADDED SAFETY
-          conversation.unreadCount = new Map();
+          socket.emit("conversations", formatted);
+        } catch {
+          socket.emit("error", { message: "Failed to load conversations" });
         }
+      },
+    );
 
-        conversation.unreadCount.set(currentUserId, 0);
-        await conversation.save();
+    // ======================================================
+    // ✉ SEND + RECEIVE MESSAGE (same event)
+    // ======================================================
+    socket.on(
+      "message",
+      async ({
+        conversationId,
+        messageType,
+        content,
+        mediaUrl,
+      }: {
+        conversationId: string;
+        messageType: "TEXT" | "IMAGE" | "VIDEO" | "AUDIO" | "FILE";
+        content?: string;
+        mediaUrl?: string;
+      }) => {
+        try {
+          const conversation = await ConversationModel.findById(conversationId);
 
-        socket.emit("unread-reset-success", {
-          otherUserId
-        });
+          if (!conversation)
+            return socket.emit("error", {
+              message: "Conversation not found",
+            });
 
-      } catch (error) {
-        console.log("Reset unread error:", error);
-      }
-    });
-
-    // =========================================
-    // 📜 LOAD CHAT HISTORY (UNCHANGED)
-    // =========================================
-    socket.on("load-chat-history", async (data: any) => {
-      try {
-
-        const currentUserId = socket.user.id;
-        const { otherUserId, page = 1, limit = 20 } = data;
-        const skip = (page - 1) * limit;
-
-        const messages = await ChatModel.find({
-          $or: [
-            { sender: currentUserId, receiver: otherUserId },
-            { sender: otherUserId, receiver: currentUserId }
-          ]
-        })
-          .sort({ createdAt: -1 })
-          .skip(skip)
-          .limit(limit);
-
-        const totalMessages = await ChatModel.countDocuments({
-          $or: [
-            { sender: currentUserId, receiver: otherUserId },
-            { sender: otherUserId, receiver: currentUserId }
-          ]
-        });
-
-        socket.emit("chat-history", {
-          messages,
-          pagination: {
-            totalMessages,
-            currentPage: page,
-            totalPages: Math.ceil(totalMessages / limit)
-          }
-        });
-
-      } catch (error) {
-        console.log("History load error:", error);
-      }
-    });
-
-    // =========================================
-    // 💬 SEND MESSAGE (🔥 FULLY MEDIA READY)
-    // =========================================
-    socket.on("send-message", async (data: any) => {
-      try {
-
-        const { receiverId, message, messageType, mediaUrl } = data; // 🔥 UPDATED
-        const senderId = socket.user.id;
-        const senderRole = socket.user.role;
-
-        // 🔥 ADDED: VALIDATION
-        if (!receiverId || !messageType) return;
-
-        const allowedTypes = ["TEXT", "IMAGE", "VIDEO", "AUDIO", "FILE"];
-        if (!allowedTypes.includes(messageType)) return;
-
-        if (messageType === "TEXT" && !message) return;
-        if (messageType !== "TEXT" && !mediaUrl) return;
-
-        const receiver: any = await UserModel.findById(receiverId);
-        if (!receiver) return;
-
-        let allowed = false;
-
-        if (
-          (senderRole === "ADMIN" && receiver.role === "EMPLOYEE") ||
-          (senderRole === "EMPLOYEE" && receiver.role === "ADMIN")
-        ) allowed = true;
-
-        if (
-          senderRole === "EMPLOYEE" &&
-          receiver.role === "EMPLOYEE"
-        ) allowed = true;
-
-        if (
-          senderRole === "CLIENT" &&
-          receiver.role === "EMPLOYEE"
-        ) {
-          const senderUser: any = await UserModel.findById(senderId);
+          // Security check
           if (
-            senderUser &&
-            String(senderUser.createdBy) === String(receiver._id)
-          ) allowed = true;
-        }
+            !conversation.participants.map((p) => p.toString()).includes(userId)
+          ) {
+            return socket.emit("error", { message: "Unauthorized" });
+          }
 
-        if (
-          senderRole === "EMPLOYEE" &&
-          receiver.role === "CLIENT" &&
-          String(receiver.createdBy) === String(senderId)
-        ) allowed = true;
+          // Save message in DB
+          const newMessage = await MessageModel.create({
+            conversation: conversationId,
+            sender: userId,
+            messageType,
+            content: content || null,
+            mediaUrl: mediaUrl || null,
+            readBy: [userId], // sender auto-read
+          });
 
-        if (!allowed) return;
-
-        // 💾 SAVE MESSAGE (🔥 MEDIA SAFE)
-        const newMessage = await ChatModel.create({
-          sender: senderId,
-          receiver: receiverId,
-          messageType,
-          message: message || null,        // 🔥 UPDATED
-          mediaUrl: mediaUrl || null,      // 🔥 UPDATED
-        });
-
-        // 💬 UPDATE / CREATE CONVERSATION
-        let conversation: any = await ConversationModel.findOne({
-          participants: { $all: [senderId, receiverId] }
-        });
-
-        // 🔥 ADDED: SMART PREVIEW
-        let previewText =
-          messageType === "TEXT" ? message : messageType;
-
-        if (!conversation) {
-
-          conversation = await ConversationModel.create({
-            participants: [senderId, receiverId],
-            lastMessage: previewText,       // 🔥 UPDATED
+          // Update conversation last message info
+          await ConversationModel.findByIdAndUpdate(conversationId, {
+            lastMessage: content || messageType,
             lastMessageType: messageType,
             lastMessageAt: new Date(),
           });
 
-          if (!conversation.unreadCount) {  // 🔥 ADDED SAFETY
-            conversation.unreadCount = new Map();
-          }
+          // Populate sender info
+          const populatedMessage = await MessageModel.findById(newMessage._id)
+            .populate("sender", "firstName lastName role profilePicture")
+            .lean();
 
-          conversation.unreadCount.set(receiverId, 1);
-          await conversation.save();
-
-        } else {
-
-          conversation.lastMessage = previewText; // 🔥 UPDATED
-          conversation.lastMessageType = messageType;
-          conversation.lastMessageAt = new Date();
-
-          if (!conversation.unreadCount) {
-            conversation.unreadCount = new Map();
-          }
-
-          const currentUnread =
-            conversation.unreadCount.get(receiverId) || 0;
-
-          conversation.unreadCount.set(receiverId, currentUnread + 1);
-
-          await conversation.save();
+          // Emit to everyone in conversation room
+          io.to(conversationId).emit("message", populatedMessage);
+        } catch {
+          socket.emit("error", { message: "Failed to send message" });
         }
+      },
+    );
 
-        // 📡 EMIT MESSAGE
-        io.to(receiverId).emit("receive-message", newMessage);
-        socket.emit("receive-message", newMessage);
+    // ======================================================
+    // 📩 GET MESSAGES (Pagination)
+    // ======================================================
+    socket.on(
+      "getMessages",
+      async ({
+        conversationId,
+        page = 1,
+        limit = 20,
+      }: {
+        conversationId: string;
+        page?: number;
+        limit?: number;
+      }) => {
+        const skip = (page - 1) * limit;
 
-        // 🔥 AUTO UPDATE SIDEBAR
-        io.to(receiverId).emit("conversation-updated");
-        socket.emit("conversation-updated");
+        const messages = await MessageModel.find({
+          conversation: conversationId,
+        })
+          .sort({ createdAt: -1 }) // latest first
+          .skip(skip)
+          .limit(limit)
+          .populate("sender", "firstName lastName role profilePicture")
+          .lean();
 
-      } catch (error) {
-        console.log("Send message error:", error);
-      }
+        socket.emit("getMessages", messages);
+      },
+    );
+
+    // ======================================================
+    // 👀 MARK AS READ
+    // ======================================================
+    socket.on(
+      "markAsRead",
+      async ({ conversationId }: { conversationId: string }) => {
+        await MessageModel.updateMany(
+          {
+            conversation: conversationId,
+            sender: { $ne: userId },
+            readBy: { $ne: userId },
+          },
+          {
+            $addToSet: { readBy: userId },
+          },
+        );
+      },
+    );
+
+    // ======================================================
+    // ❌ DISCONNECT
+    // ======================================================
+    socket.on("disconnect", () => {
+      console.log("User disconnected:", userId);
     });
-
   });
 };
 
