@@ -92,6 +92,15 @@ const socketHandler = (io: Server) => {
             });
           }
 
+          // 🔥 ADDED: Check if receiver exists
+          const receiver = await UserModel.findById(receiverId);
+          if (!receiver) {
+            return socket.emit("error", {
+              message: "Receiver not found",
+            });
+          }
+
+          // 🔎 Check if conversation already exists between both users
           let conversation = await ConversationModel.findOne({
             participants: {
               $all: [
@@ -102,29 +111,46 @@ const socketHandler = (io: Server) => {
             },
           });
 
-          // If not exists → create new conversation
+          let isNewConversation = false; // 🔥 Track if new
+
+          // 🆕 If not exists → create new conversation
           if (!conversation) {
             conversation = await ConversationModel.create({
               participants: [userId, receiverId],
               lastMessage: "",
-              messageType: "TEXT", // 🔥 FIXED: model field name
+              messageType: "TEXT", // ✅ matches your model
               isDisabled: false,
+            });
+
+            isNewConversation = true;
+          }
+
+          const conversationId = conversation._id.toString();
+
+          // ======================================================
+          // 🔥 JOIN LOGIC (Senior Requirement)
+          // ======================================================
+
+          // ✅ Sender joins conversation room
+          socket.join(conversationId);
+
+          // ✅ Receiver joins conversation room (if online)
+          // This joins ALL active sockets of receiver (multi-tab safe)
+          io.in(receiverId).socketsJoin(conversationId);
+
+          // ======================================================
+          // 🔔 Notify receiver only if newly created
+          // ======================================================
+          if (isNewConversation) {
+            io.to(receiverId).emit("newConversation", {
+              conversationId,
             });
           }
 
-          // Join conversation room
-          socket.join(conversation._id.toString());
-
-          // Notify receiver (optional — keep separate)
-          io.to(receiverId).emit("newConversation", {
-            conversationId: conversation._id,
-          });
-
-          // 🔥 CHANGED: response event name same as listener
+          // ======================================================
+          // 🔁 Send response back to sender
+          // ======================================================
           socket.emit("createConversation", conversation);
-
-          // Previously was:
-          // socket.emit("conversationCreated", conversation);
         } catch {
           socket.emit("error", {
             message: "Failed to create conversation",
