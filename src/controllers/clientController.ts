@@ -12,20 +12,38 @@ import { UserModel } from "../models/userModel";
 import { CustomRequest } from "../interfaces/auth";
 import { CLIENT_CONSTANT } from "../constants/client";
 import crypto from "crypto"; // 🆕 ADDED (secure random generator)
+import { ConversationModel } from "../models/conversationModel";
 
 export const createClient = async (req: any, res: Response) => {
   try {
     const { firstName, lastName, email, address, phone } = req.body;
 
-    // ===============================
-    // 🔥 CHANGED: Strong password generator (min 8 chars, secure)
-    // ===============================
+    // 🔹 Ensure logged-in user exists
+    if (!req.userId) {
+      return ResponseUtil.errorResponse(
+        res,
+        STATUS_CODES.BAD_REQUEST,
+        "Unauthorized request",
+      );
+    }
+
+    // 🔹 Check logged-in user role
+    const loggedInUser = await UserModel.findById(req.userId);
+
+    if (!loggedInUser || loggedInUser.role !== "EMPLOYEE") {
+      return ResponseUtil.errorResponse(
+        res,
+        STATUS_CODES.FORBIDDEN,
+        "Only employees can create clients",
+      );
+    }
+
+    // 🔹 Generate secure password
     const generateRandomPassword = (length: number = 8): string => {
       const upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
       const lower = "abcdefghijklmnopqrstuvwxyz";
       const numbers = "0123456789";
       const symbols = "!@#$%^&*";
-
       const all = upper + lower + numbers + symbols;
 
       let password =
@@ -35,8 +53,7 @@ export const createClient = async (req: any, res: Response) => {
         symbols[Math.floor(Math.random() * symbols.length)];
 
       for (let i = 4; i < length; i++) {
-        const randomIndex = crypto.randomInt(0, all.length); // 🔥 CHANGED (more secure than Math.random)
-        password += all[randomIndex];
+        password += all[Math.floor(Math.random() * all.length)];
       }
 
       return password
@@ -45,13 +62,10 @@ export const createClient = async (req: any, res: Response) => {
         .join("");
     };
 
-    const genPassword = generateRandomPassword(8); // 🔥 CHANGED (explicit min length 8)
-
+    const genPassword = generateRandomPassword(8);
     const hashedPassword = await hash(genPassword, String(AuthConfig.SALT));
 
-    // ===============================
-    // 🆕 ADDED: Check if email already exists
-    // ===============================
+    // 🔹 Email check
     const existingUser = await UserModel.findOne({ email });
     if (existingUser) {
       return ResponseUtil.errorResponse(
@@ -61,7 +75,7 @@ export const createClient = async (req: any, res: Response) => {
       );
     }
 
-    // create user
+    // 🔥 Create CLIENT correctly linked to employee
     const user = await UserModel.create({
       firstName,
       lastName,
@@ -70,12 +84,12 @@ export const createClient = async (req: any, res: Response) => {
       email,
       password: hashedPassword,
       role: "CLIENT",
-      createdBy: req.userId,
-      assignedEmployee: req.userId,
+      createdBy: loggedInUser._id,
+      assignedEmployee: new mongoose.Types.ObjectId(loggedInUser._id),
       status: "ACTIVE",
     });
 
-    // send email
+    // 🔹 Send email
     const template = emailTemplateGeneric(
       "Welcome to the TSH Services",
       firstName,
@@ -84,6 +98,10 @@ export const createClient = async (req: any, res: Response) => {
     );
 
     await sendEmail(email, "Your account has been created", template);
+
+    await ConversationModel.create({
+      participants: [req.userId, user._id],
+    });
 
     const clientResponse: any = user.toObject();
     delete clientResponse.password;

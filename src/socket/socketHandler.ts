@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 import { ConversationModel } from "../models/conversationModel";
 import { MessageModel } from "../models/messageModel";
+import { UserModel } from "../models/userModel";
 
 interface JwtPayload {
   id: string;
@@ -13,7 +14,6 @@ interface JwtPayload {
 const socketHandler = (io: Server) => {
   // ======================================================
   // 🔐 JWT AUTH MIDDLEWARE
-  // Every socket connection must provide valid token
   // ======================================================
   io.use((socket: Socket & { user?: JwtPayload }, next) => {
     try {
@@ -41,15 +41,10 @@ const socketHandler = (io: Server) => {
     const userId = socket.user!.id;
     console.log("User connected:", userId);
 
-    // ------------------------------------------------------
-    // 🏠 Join personal room (used for direct notifications)
-    // ------------------------------------------------------
+    // 🏠 Join personal room (for direct notifications)
     socket.join(userId);
 
-    // ------------------------------------------------------
     // 🏠 Join all existing conversation rooms
-    // So user receives live messages
-    // ------------------------------------------------------
     const existingConversations = await ConversationModel.find({
       participants: new mongoose.Types.ObjectId(userId),
       isDisabled: false,
@@ -60,16 +55,43 @@ const socketHandler = (io: Server) => {
     });
 
     // ======================================================
-    // 🆕 CREATE CONVERSATION (if not exists)
+    // 🔍 SEARCH USERS BY USERNAME
+    // ======================================================
+    socket.on("searchUsers", async ({ username }: { username: string }) => {
+      try {
+        if (!username) {
+          return socket.emit("searchUsers", []);
+        }
+
+        const users = await UserModel.find({
+          _id: { $ne: userId }, // ❌ exclude self
+          role: { $in: ["ADMIN", "EMPLOYEE"] }, // allow only admin & employees
+          $or: [
+            { firstName: { $regex: username, $options: "i" } },
+            { lastName: { $regex: username, $options: "i" } },
+            { email: { $regex: username, $options: "i" } },
+          ],
+        }).select("_id firstName lastName role profilePicture");
+
+        socket.emit("searchUsers", users);
+      } catch {
+        socket.emit("error", { message: "Search failed" });
+      }
+    });
+    // ======================================================
+    // 🆕 CREATE CONVERSATION (IF NOT EXISTS)
     // ======================================================
     socket.on(
       "createConversation",
       async ({ receiverId }: { receiverId: string }) => {
-        console.log("🔥 createConversation triggered");
-        console.log("Sender:", userId);
-        console.log("Receiver:", receiverId);
         try {
-          // Check if conversation already exists between 2 users
+          // ❌ Prevent self chat
+          if (receiverId === userId) {
+            return socket.emit("error", {
+              message: "You cannot chat with yourself",
+            });
+          }
+
           let conversation = await ConversationModel.findOne({
             participants: {
               $all: [
@@ -80,181 +102,162 @@ const socketHandler = (io: Server) => {
             },
           });
 
-          // If not exists → create new
+          // If not exists → create new conversation
           if (!conversation) {
             conversation = await ConversationModel.create({
               participants: [userId, receiverId],
               lastMessage: "",
-              lastMessageType: "TEXT",
-              lastMessageAt: new Date(),
+              messageType: "TEXT", // 🔥 FIXED: model field name
               isDisabled: false,
             });
           }
 
-          // Join both users into that room
+          // Join conversation room
           socket.join(conversation._id.toString());
 
-          // Notify receiver
+          // Notify receiver (optional — keep separate)
           io.to(receiverId).emit("newConversation", {
             conversationId: conversation._id,
           });
 
-          socket.emit("conversationCreated", conversation);
+          // 🔥 CHANGED: response event name same as listener
+          socket.emit("createConversation", conversation);
+
+          // Previously was:
+          // socket.emit("conversationCreated", conversation);
         } catch {
-          socket.emit("error", { message: "Failed to create conversation" });
+          socket.emit("error", {
+            message: "Failed to create conversation",
+          });
         }
       },
     );
 
     // ======================================================
-    // 📜 LIST CONVERSATIONS (with pagination)
-    // WhatsApp home screen
+    // 📜 LIST CONVERSATIONS (Home Screen)
     // ======================================================
-    socket.on(
-      "conversations",
-      async ({ page = 1, limit = 10 }: { page?: number; limit?: number }) => {
-        try {
-          const skip = (page - 1) * limit;
+    socket.on("conversations", async ({ page = 1, limit = 10 }) => {
+      try {
+        const skip = (page - 1) * limit;
 
-          const convs = await ConversationModel.find({
-            participants: new mongoose.Types.ObjectId(userId),
-            isDisabled: false,
-          })
-            .populate("participants", "firstName lastName role profilePicture")
-            .sort({ lastMessageAt: -1 }) // latest chat first
-            .skip(skip)
-            .limit(limit)
-            .lean();
+        const convs = await ConversationModel.find({
+          participants: new mongoose.Types.ObjectId(userId),
+          isDisabled: false,
+        })
+          .populate("participants", "firstName lastName role profilePicture")
+          .sort({ lastMessageAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .lean();
 
-          // Calculate unread count for each conversation
-          const formatted = await Promise.all(
-            convs.map(async (conv: any) => {
-              const unreadCount = await MessageModel.countDocuments({
-                conversation: conv._id,
-                sender: { $ne: userId },
-                readBy: { $ne: userId },
-              });
-
-              return {
-                ...conv,
-                unreadCount,
-              };
-            }),
-          );
-
-          socket.emit("conversations", formatted);
-        } catch {
-          socket.emit("error", { message: "Failed to load conversations" });
-        }
-      },
-    );
-
+        socket.emit("conversations", convs);
+      } catch {
+        socket.emit("error", {
+          message: "Failed to load conversations",
+        });
+      }
+    });
     // ======================================================
-    // ✉ SEND + RECEIVE MESSAGE (same event)
+    // ✉ SEND MESSAGE
     // ======================================================
     socket.on(
       "message",
-      async ({
-        conversationId,
-        messageType,
-        content,
-        mediaUrl,
-      }: {
-        conversationId: string;
-        messageType: "TEXT" | "IMAGE" | "VIDEO" | "AUDIO" | "FILE";
-        content?: string;
-        mediaUrl?: string;
-      }) => {
+      async ({ conversationId, messageType, content, mediaUrl }) => {
         try {
           const conversation = await ConversationModel.findById(conversationId);
 
-          if (!conversation)
+          if (!conversation) {
             return socket.emit("error", {
               message: "Conversation not found",
             });
+          }
 
-          // Security check
+          // 🔐 Security: Only participants can send
           if (
             !conversation.participants.map((p) => p.toString()).includes(userId)
           ) {
-            return socket.emit("error", { message: "Unauthorized" });
+            return socket.emit("error", {
+              message: "Unauthorized",
+            });
           }
 
-          // Save message in DB
           const newMessage = await MessageModel.create({
             conversation: conversationId,
             sender: userId,
             messageType,
             content: content || null,
             mediaUrl: mediaUrl || null,
-            readBy: [userId], // sender auto-read
+            readBy: [userId],
           });
 
-          // Update conversation last message info
+          // ======================================================
+          // 🔥 FIX STARTS HERE
+          // ======================================================
+
           await ConversationModel.findByIdAndUpdate(conversationId, {
             lastMessage: content || messageType,
-            lastMessageType: messageType,
-            lastMessageAt: new Date(),
+
+            messageType: messageType,
+            // 🔥 CHANGED: lastMessageType → messageType
+            // Reason: ConversationModel me field name "messageType" hai
+
+            // 🔥 REMOVED: lastMessageAt
+            // Reason: Model me lastMessageAt field exist nahi karti
+            // timestamps: true already automatically updates updatedAt
           });
 
-          // Populate sender info
+          // ======================================================
+          // 🔥 FIX ENDS HERE
+          // ======================================================
+
           const populatedMessage = await MessageModel.findById(newMessage._id)
             .populate("sender", "firstName lastName role profilePicture")
             .lean();
 
-          // Emit to everyone in conversation room
           io.to(conversationId).emit("message", populatedMessage);
         } catch {
-          socket.emit("error", { message: "Failed to send message" });
+          socket.emit("error", {
+            message: "Failed to send message",
+          });
         }
       },
     );
-
     // ======================================================
-    // 📩 GET MESSAGES (Pagination)
+    // 📩 GET MESSAGES (WITH SECURITY CHECK)
     // ======================================================
     socket.on(
       "getMessages",
-      async ({
-        conversationId,
-        page = 1,
-        limit = 20,
-      }: {
-        conversationId: string;
-        page?: number;
-        limit?: number;
-      }) => {
-        const skip = (page - 1) * limit;
+      async ({ conversationId, page = 1, limit = 20 }) => {
+        try {
+          const conversation = await ConversationModel.findById(conversationId);
 
-        const messages = await MessageModel.find({
-          conversation: conversationId,
-        })
-          .sort({ createdAt: -1 }) // latest first
-          .skip(skip)
-          .limit(limit)
-          .populate("sender", "firstName lastName role profilePicture")
-          .lean();
+          // 🔐 Security: Only participants can fetch messages
+          if (
+            !conversation ||
+            !conversation.participants.map((p) => p.toString()).includes(userId)
+          ) {
+            return socket.emit("error", {
+              message: "Unauthorized",
+            });
+          }
 
-        socket.emit("getMessages", messages);
-      },
-    );
+          const skip = (page - 1) * limit;
 
-    // ======================================================
-    // 👀 MARK AS READ
-    // ======================================================
-    socket.on(
-      "markAsRead",
-      async ({ conversationId }: { conversationId: string }) => {
-        await MessageModel.updateMany(
-          {
+          const messages = await MessageModel.find({
             conversation: conversationId,
-            sender: { $ne: userId },
-            readBy: { $ne: userId },
-          },
-          {
-            $addToSet: { readBy: userId },
-          },
-        );
+          })
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit)
+            .populate("sender", "firstName lastName role profilePicture")
+            .lean();
+
+          socket.emit("getMessages", messages);
+        } catch {
+          socket.emit("error", {
+            message: "Failed to fetch messages",
+          });
+        }
       },
     );
 

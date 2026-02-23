@@ -9,6 +9,7 @@ import { hash } from "bcrypt";
 import AuthConfig from "../config/authConfig";
 import { UserModel } from "../models/userModel";
 import { EMPLOYEE_CONSTANT } from "../constants/employee";
+import mongoose from "mongoose";
 
 export const login = async (req: Request, res: Response) => {
   try {
@@ -144,7 +145,6 @@ export const createEmployee = async (req: CustomRequest, res: Response) => {
     return ResponseUtil.handleError(res, err);
   }
 };
-
 export const getAllEmployees = async (req: CustomRequest, res: Response) => {
   try {
     const page = Number(req.query.page) || 1;
@@ -152,7 +152,7 @@ export const getAllEmployees = async (req: CustomRequest, res: Response) => {
     const skip = (page - 1) * limit;
 
     const employees = await UserModel.find({ role: "EMPLOYEE" })
-      .select("-password")
+      .select("-password -assignedEmployee") // 🔥 hide both
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
@@ -183,12 +183,9 @@ export const getAllEmployees = async (req: CustomRequest, res: Response) => {
 // GET /employee/:id
 export const getEmployeeById = async (req: any, res: Response) => {
   try {
-    // ❌ REMOVED: Role check (already handled in route middleware)
-    // if (req.role !== "ADMIN") { ... }
-
     const { id } = req.params;
 
-    if (!id) {
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
       return ResponseUtil.errorResponse(
         res,
         STATUS_CODES.BAD_REQUEST,
@@ -196,17 +193,36 @@ export const getEmployeeById = async (req: any, res: Response) => {
       );
     }
 
-    // 🔥 CHANGED: Added role filter to ensure only EMPLOYEE is fetched
     const employee = await UserModel.findOne({
       _id: id,
       role: "EMPLOYEE",
-    }).select("-password");
+    }).select("-password -assignedEmployee");
 
     if (!employee) {
       return ResponseUtil.errorResponse(
         res,
         STATUS_CODES.NOT_FOUND,
         EMPLOYEE_CONSTANT.NOT_FOUND,
+      );
+    }
+
+    // 🔥 Only SALES department gets clients
+    if (employee.department?.toUpperCase() === "SALES") {
+      const clients = await UserModel.find({
+        role: "CLIENT",
+        assignedEmployee: employee._id,
+      }).select(
+        "_id firstName lastName email address phone role status createdBy createdAt updatedAt",
+      );
+
+      return ResponseUtil.successResponse(
+        res,
+        STATUS_CODES.SUCCESS,
+        {
+          employee,
+          clients,
+        },
+        EMPLOYEE_CONSTANT.FETCHED_ONE,
       );
     }
 
@@ -220,7 +236,6 @@ export const getEmployeeById = async (req: any, res: Response) => {
     return ResponseUtil.handleError(res, err);
   }
 };
-
 export const updateEmployee = async (req: any, res: Response) => {
   try {
     const { id } = req.params;
