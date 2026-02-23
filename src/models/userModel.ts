@@ -26,6 +26,12 @@ const UserSchema = new Schema(
     },
 
     createdBy: { type: Schema.Types.ObjectId, ref: "User" },
+    resetOtp: {
+      type: String,
+    },
+    resetOtpExpiry: {
+      type: Date,
+    },
 
     // 🔥 ADD THIS FIELD
     assignedEmployee: {

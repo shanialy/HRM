@@ -2,7 +2,7 @@ import { Request, Response } from "express";
 import ResponseUtil from "../utils/Response/responseUtils";
 import { STATUS_CODES } from "../constants/statusCodes";
 import { AUTH_CONSTANTS } from "../constants/messages";
-import { compareSync } from "bcrypt";
+import { compareSync, hashSync } from "bcrypt";
 import { generateToken } from "../utils/Token";
 import { CustomRequest } from "../interfaces/auth";
 import { hash } from "bcrypt";
@@ -10,6 +10,12 @@ import AuthConfig from "../config/authConfig";
 import { UserModel } from "../models/userModel";
 import { EMPLOYEE_CONSTANT } from "../constants/employee";
 import mongoose from "mongoose";
+import { any } from "zod";
+import { sendEmail } from "../utils/SendEmail";
+
+const generateOtp = () => {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+};
 
 export const login = async (req: Request, res: Response) => {
   try {
@@ -288,6 +294,145 @@ export const changeEmployeeStatus = async (req: any, res: Response) => {
       STATUS_CODES.SUCCESS,
       { employee: updatedEmployee },
       EMPLOYEE_CONSTANT.UPDATED_STATUS,
+    );
+  } catch (err) {
+    return ResponseUtil.handleError(res, err);
+  }
+};
+
+export const changePassword = async (req: any, res: Response) => {
+  try {
+    const { oldPassword, newPassword } = req.body;
+
+    let user: any = await UserModel.findById(req.userId);
+
+    if (!user) {
+      return ResponseUtil.errorResponse(
+        res,
+        STATUS_CODES.NOT_FOUND,
+        AUTH_CONSTANTS.USER_NOT_FOUND,
+      );
+    }
+
+    const hashpass = compareSync(oldPassword, String(user.password));
+
+    if (!hashpass) {
+      return ResponseUtil.errorResponse(
+        res,
+        STATUS_CODES.BAD_REQUEST,
+        AUTH_CONSTANTS.PASSWORD_MISMATCH,
+      );
+    }
+
+    if (user.status !== "ACTIVE") {
+      return ResponseUtil.errorResponse(
+        res,
+        STATUS_CODES.FORBIDDEN,
+        "Your account is inactive. Please contact admin.",
+      );
+    }
+
+    const hashedPassword = hashSync(newPassword, 10);
+
+    user.password = hashedPassword;
+    await user.save();
+
+    return ResponseUtil.successResponse(
+      res,
+      STATUS_CODES.SUCCESS,
+      {},
+      AUTH_CONSTANTS.PASSWORD_CHANGED,
+    );
+  } catch (err) {
+    return ResponseUtil.handleError(res, err);
+  }
+};
+
+export const forgotPassword = async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+
+    const user: any = await UserModel.findOne({ email });
+
+    if (!user) {
+      return ResponseUtil.errorResponse(
+        res,
+        STATUS_CODES.NOT_FOUND,
+        AUTH_CONSTANTS.USER_NOT_FOUND,
+      );
+    }
+
+    const otp = generateOtp();
+
+    user.resetOtp = otp;
+    user.resetOtpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    await user.save();
+
+    // Yahan tum apna existing email function use karoge
+    await sendEmail(email, "Password Reset OTP", `Your OTP is ${otp}`);
+
+    return ResponseUtil.successResponse(
+      res,
+      STATUS_CODES.SUCCESS,
+      {},
+      "OTP sent to your email",
+    );
+  } catch (err) {
+    return ResponseUtil.handleError(res, err);
+  }
+};
+
+export const resetPassword = async (req: Request, res: Response) => {
+  try {
+    const { email, otp, newPassword } = req.body;
+
+    const user: any = await UserModel.findOne({ email });
+
+    if (!user) {
+      return ResponseUtil.errorResponse(
+        res,
+        STATUS_CODES.NOT_FOUND,
+        AUTH_CONSTANTS.USER_NOT_FOUND,
+      );
+    }
+
+    if (!user.resetOtp || !user.resetOtpExpiry) {
+      return ResponseUtil.errorResponse(
+        res,
+        STATUS_CODES.BAD_REQUEST,
+        "OTP not requested",
+      );
+    }
+
+    if (user.resetOtp !== otp) {
+      return ResponseUtil.errorResponse(
+        res,
+        STATUS_CODES.BAD_REQUEST,
+        "Invalid OTP",
+      );
+    }
+
+    if (user.resetOtpExpiry < new Date()) {
+      return ResponseUtil.errorResponse(
+        res,
+        STATUS_CODES.BAD_REQUEST,
+        "OTP expired",
+      );
+    }
+
+    const hashedPassword = hashSync(newPassword, 10);
+
+    user.password = hashedPassword;
+    user.resetOtp = undefined;
+    user.resetOtpExpiry = undefined;
+
+    await user.save();
+
+    return ResponseUtil.successResponse(
+      res,
+      STATUS_CODES.SUCCESS,
+      {},
+      "Password reset successfully",
     );
   } catch (err) {
     return ResponseUtil.handleError(res, err);

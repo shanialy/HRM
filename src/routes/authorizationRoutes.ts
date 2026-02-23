@@ -1,7 +1,18 @@
 import { Router } from "express";
-import { getProfile, login } from "../controllers/authorizationController";
+import {
+  getProfile,
+  login,
+  changePassword,
+  forgotPassword,
+  resetPassword,
+} from "../controllers/authorizationController";
 import { checkAuth } from "../middleware/checkAuth";
-import { loginSchema } from "../validators/authValidators";
+import {
+  loginSchema,
+  changePasswordSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
+} from "../validators/authValidators";
 import { validate } from "../middleware/validate";
 
 const router = Router();
@@ -51,5 +62,14 @@ router.post("/login", validate(loginSchema), login);
  */
 
 router.get("/get-profile", checkAuth, getProfile);
+
+router.post(
+  "/change-password",
+  checkAuth,
+  validate(changePasswordSchema),
+  changePassword,
+);
+router.post("/forgot-password", validate(forgotPasswordSchema), forgotPassword);
+router.post("/reset-password", validate(resetPasswordSchema), resetPassword);
 
 export default router;
