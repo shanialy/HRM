@@ -63,13 +63,97 @@ router.post("/login", validate(loginSchema), login);
 
 router.get("/get-profile", checkAuth, getProfile);
 
+/**
+ * @swagger
+ * /api/v1/authorization/change-password:
+ *   post:
+ *     summary: Change user password
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - oldPassword
+ *               - newPassword
+ *             properties:
+ *               oldPassword:
+ *                 type: string
+ *                 example: OldPassword@12
+ *               newPassword:
+ *                 type: string
+ *                 example: NewPassword@123
+ *     responses:
+ *       200:
+ *         description: Password changed successfully
+ *       401:
+ *         description: Unauthorized
+ */
 router.post(
   "/change-password",
   checkAuth,
   validate(changePasswordSchema),
   changePassword,
 );
+
+/**
+ * @swagger
+ * /api/v1/authorization/forgot-password:
+ *   post:
+ *     summary: Send OTP to user email for password reset
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 example: user@gmail.com
+ *     responses:
+ *       200:
+ *         description: OTP sent to email
+ */
 router.post("/forgot-password", validate(forgotPasswordSchema), forgotPassword);
+
+/**
+ * @swagger
+ * /api/v1/authorization/reset-password:
+ *   post:
+ *     summary: Reset password using OTP
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - otp
+ *               - newPassword
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 example: user@gmail.com
+ *               otp:
+ *                 type: string
+ *                 example: 123456
+ *               newPassword:
+ *                 type: string
+ *                 example: NewPassword@123
+ *     responses:
+ *       200:
+ *         description: Password reset successfully
+ */
 router.post("/reset-password", validate(resetPasswordSchema), resetPassword);
 
 export default router;

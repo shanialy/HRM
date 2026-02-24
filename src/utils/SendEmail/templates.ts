@@ -107,3 +107,81 @@ export const emailTemplateGeneric = (
 
   `;
 };
+
+export const otpTemplate = (subject: string, role: string, otp: string) => {
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${subject}</title>
+<style>
+  body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f4f6f8;
+    color: #333;
+    margin: 0;
+    padding: 0;
+  }
+  .container {
+    max-width: 600px;
+    margin: 40px auto;
+    background-color: #ffffff;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  }
+  .header {
+    background-color: #d32f2f;
+    color: #fff;
+    padding: 20px;
+    text-align: center;
+    font-size: 22px;
+    font-weight: bold;
+  }
+  .content {
+    padding: 30px 25px;
+    font-size: 16px;
+    line-height: 1.6;
+    text-align: center;
+  }
+  .otp-box {
+    background-color: #f0f4ff;
+    padding: 20px;
+    border-radius: 8px;
+    font-size: 28px;
+    font-weight: bold;
+    letter-spacing: 4px;
+    margin: 25px 0;
+    color: #d32f2f;
+  }
+  .footer {
+    font-size: 14px;
+    color: #888;
+    text-align: center;
+    padding: 15px 10px;
+  }
+</style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">${subject}</div>
+    <div class="content">
+      <p>Dear ${role},</p>
+      <p>We received a request to reset your password.</p>
+      <p>Please use the OTP below to continue:</p>
+
+      <div class="otp-box">${otp}</div>
+
+      <p>This OTP will expire in 10 minutes.</p>
+      <p>If you did not request this, please ignore this email.</p>
+    </div>
+    <div class="footer">
+      &copy; ${new Date().getFullYear()} Teck Solution Hub. All rights reserved.
+    </div>
+  </div>
+</body>
+</html>
+`;
+};

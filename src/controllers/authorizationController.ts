@@ -12,6 +12,7 @@ import { EMPLOYEE_CONSTANT } from "../constants/employee";
 import mongoose from "mongoose";
 import { any } from "zod";
 import { sendEmail } from "../utils/SendEmail";
+import { otpTemplate } from "../utils/SendEmail/templates";
 
 const generateOtp = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
@@ -368,9 +369,9 @@ export const forgotPassword = async (req: Request, res: Response) => {
     user.resetOtpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
     await user.save();
 
-    // Yahan tum apna existing email function use karoge
-    await sendEmail(email, "Password Reset OTP", `Your OTP is ${otp}`);
+    const template = otpTemplate("Password Reset OTP", user.role, otp);
 
+    await sendEmail(email, "Password Reset OTP", template);
     return ResponseUtil.successResponse(
       res,
       STATUS_CODES.SUCCESS,
