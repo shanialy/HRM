@@ -12,7 +12,11 @@ import { EMPLOYEE_CONSTANT } from "../constants/employee";
 import mongoose from "mongoose";
 import { any } from "zod";
 import { sendEmail } from "../utils/SendEmail";
-import { otpTemplate } from "../utils/SendEmail/templates";
+import {
+  emailTemplateGeneric,
+  otpTemplate,
+} from "../utils/SendEmail/templates";
+import { generateRandomPassword } from "../middleware/passwordGenerator";
 
 const generateOtp = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
@@ -119,7 +123,7 @@ export const createEmployee = async (req: CustomRequest, res: Response) => {
     }
 
     // 🔐 Default password
-    const defaultPassword = "Password@12";
+    const defaultPassword = generateRandomPassword(8);
     const hashedPassword = await hash(defaultPassword, Number(AuthConfig.SALT));
 
     const employee = await UserModel.create({
@@ -141,6 +145,15 @@ export const createEmployee = async (req: CustomRequest, res: Response) => {
 
     const employeeObj = employee.toObject();
     const { password, ...employeeWithoutPassword } = employeeObj;
+
+    const template = emailTemplateGeneric(
+      "Welcome to the TSH Digital",
+      "Employee",
+      email,
+      defaultPassword,
+    );
+
+    await sendEmail(email, "Your account has been created", template);
 
     return ResponseUtil.successResponse(
       res,
