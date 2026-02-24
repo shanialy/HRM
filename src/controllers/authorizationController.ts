@@ -187,7 +187,6 @@ export const getAllEmployees = async (req: CustomRequest, res: Response) => {
   }
 };
 
-// GET /employee/:id
 export const getEmployeeById = async (req: any, res: Response) => {
   try {
     const { id } = req.params;
@@ -217,7 +216,9 @@ export const getEmployeeById = async (req: any, res: Response) => {
     if (employee.department?.toUpperCase() === "SALES") {
       const clients = await UserModel.find({
         role: "CLIENT",
-        assignedEmployee: employee._id,
+        // ✅ FIXED: changed from assignedEmployee to createdBy
+        // because client documents store employee reference in createdBy field
+        createdBy: employee._id,
       }).select(
         "_id firstName lastName email address phone role status createdBy createdAt updatedAt",
       );
