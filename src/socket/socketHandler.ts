@@ -41,10 +41,8 @@ const socketHandler = (io: Server) => {
     const userId = socket.user!.id;
     console.log("User connected:", userId);
 
-    // 🏠 Join personal room (for direct notifications)
     socket.join(userId);
 
-    // 🏠 Join all existing conversation rooms
     const existingConversations = await ConversationModel.find({
       participants: new mongoose.Types.ObjectId(userId),
       isDisabled: false,
@@ -55,17 +53,15 @@ const socketHandler = (io: Server) => {
     });
 
     // ======================================================
-    // 🔍 SEARCH USERS BY USERNAME
+    // 🔍 SEARCH USERS
     // ======================================================
     socket.on("searchUsers", async ({ username }: { username: string }) => {
       try {
-        if (!username) {
-          return socket.emit("searchUsers", []);
-        }
+        if (!username) return socket.emit("searchUsers", []);
 
         const users = await UserModel.find({
-          _id: { $ne: userId }, // ❌ exclude self
-          role: { $in: ["ADMIN", "EMPLOYEE"] }, // allow only admin & employees
+          _id: { $ne: userId },
+          role: { $in: ["ADMIN", "EMPLOYEE"] },
           $or: [
             { firstName: { $regex: username, $options: "i" } },
             { lastName: { $regex: username, $options: "i" } },
@@ -78,29 +74,25 @@ const socketHandler = (io: Server) => {
         socket.emit("error", { message: "Search failed" });
       }
     });
+
     // ======================================================
-    // 🆕 CREATE CONVERSATION (IF NOT EXISTS)
+    // 🆕 CREATE CONVERSATION
     // ======================================================
     socket.on(
       "createConversation",
       async ({ receiverId }: { receiverId: string }) => {
         try {
-          // ❌ Prevent self chat
           if (receiverId === userId) {
             return socket.emit("error", {
               message: "You cannot chat with yourself",
             });
           }
 
-          // 🔥 ADDED: Check if receiver exists
           const receiver = await UserModel.findById(receiverId);
           if (!receiver) {
-            return socket.emit("error", {
-              message: "Receiver not found",
-            });
+            return socket.emit("error", { message: "Receiver not found" });
           }
 
-          // 🔎 Check if conversation already exists between both users
           let conversation = await ConversationModel.findOne({
             participants: {
               $all: [
@@ -111,15 +103,20 @@ const socketHandler = (io: Server) => {
             },
           });
 
-          let isNewConversation = false; // 🔥 Track if new
+          let isNewConversation = false;
 
-          // 🆕 If not exists → create new conversation
           if (!conversation) {
             conversation = await ConversationModel.create({
               participants: [userId, receiverId],
               lastMessage: "",
-              messageType: "TEXT", // ✅ matches your model
+              messageType: "TEXT",
               isDisabled: false,
+
+              // 🔥 ADDED: initialize unreadCounts
+              unreadCounts: {
+                [userId]: 0,
+                [receiverId]: 0,
+              },
             });
 
             isNewConversation = true;
@@ -127,29 +124,13 @@ const socketHandler = (io: Server) => {
 
           const conversationId = conversation._id.toString();
 
-          // ======================================================
-          // 🔥 JOIN LOGIC (Senior Requirement)
-          // ======================================================
-
-          // ✅ Sender joins conversation room
           socket.join(conversationId);
-
-          // ✅ Receiver joins conversation room (if online)
-          // This joins ALL active sockets of receiver (multi-tab safe)
           io.in(receiverId).socketsJoin(conversationId);
 
-          // ======================================================
-          // 🔔 Notify receiver only if newly created
-          // ======================================================
           if (isNewConversation) {
-            io.to(receiverId).emit("newConversation", {
-              conversationId,
-            });
+            io.to(receiverId).emit("newConversation", { conversationId });
           }
 
-          // ======================================================
-          // 🔁 Send response back to sender
-          // ======================================================
           socket.emit("createConversation", conversation);
         } catch {
           socket.emit("error", {
@@ -160,7 +141,7 @@ const socketHandler = (io: Server) => {
     );
 
     // ======================================================
-    // 📜 LIST CONVERSATIONS (Home Screen)
+    // 📜 LIST CONVERSATIONS (🔥 Map Based Unread)
     // ======================================================
     socket.on("conversations", async ({ page = 1, limit = 10 }) => {
       try {
@@ -171,20 +152,27 @@ const socketHandler = (io: Server) => {
           isDisabled: false,
         })
           .populate("participants", "firstName lastName role profilePicture")
-          .sort({ lastMessageAt: -1 })
+          .sort({ updatedAt: -1 })
           .skip(skip)
           .limit(limit)
           .lean();
 
-        socket.emit("conversations", convs);
+        // 🔥 ADDED: read unread from Map
+        const conversationsWithUnread = convs.map((conv: any) => ({
+          ...conv,
+          unreadCount: conv.unreadCounts?.[userId] || 0,
+        }));
+
+        socket.emit("conversations", conversationsWithUnread);
       } catch {
         socket.emit("error", {
           message: "Failed to load conversations",
         });
       }
     });
+
     // ======================================================
-    // ✉ SEND MESSAGE
+    // ✉ SEND MESSAGE (🔥 Map Increment Logic)
     // ======================================================
     socket.on(
       "message",
@@ -198,14 +186,15 @@ const socketHandler = (io: Server) => {
             });
           }
 
-          // 🔐 Security: Only participants can send
           if (
             !conversation.participants.map((p) => p.toString()).includes(userId)
           ) {
-            return socket.emit("error", {
-              message: "Unauthorized",
-            });
+            return socket.emit("error", { message: "Unauthorized" });
           }
+
+          const receiverId = conversation.participants
+            .map((p) => p.toString())
+            .find((id) => id !== userId);
 
           const newMessage = await MessageModel.create({
             conversation: conversationId,
@@ -216,40 +205,63 @@ const socketHandler = (io: Server) => {
             readBy: [userId],
           });
 
-          // ======================================================
-          // 🔥 FIX STARTS HERE
-          // ======================================================
-
           await ConversationModel.findByIdAndUpdate(conversationId, {
             lastMessage: content || messageType,
-
             messageType: messageType,
-            // 🔥 CHANGED: lastMessageType → messageType
-            // Reason: ConversationModel me field name "messageType" hai
 
-            // 🔥 REMOVED: lastMessageAt
-            // Reason: Model me lastMessageAt field exist nahi karti
-            // timestamps: true already automatically updates updatedAt
+            // 🔥 ADDED: Update unreadCounts map
+            $set: {
+              [`unreadCounts.${userId}`]: 0,
+            },
+            $inc: {
+              [`unreadCounts.${receiverId}`]: 1,
+            },
           });
-
-          // ======================================================
-          // 🔥 FIX ENDS HERE
-          // ======================================================
 
           const populatedMessage = await MessageModel.findById(newMessage._id)
             .populate("sender", "firstName lastName role profilePicture")
             .lean();
 
           io.to(conversationId).emit("message", populatedMessage);
-        } catch {
-          socket.emit("error", {
-            message: "Failed to send message",
+
+          // 🔥 ADDED: Emit unread update to receiver
+          const updatedConversation =
+            await ConversationModel.findById(conversationId).lean();
+
+          io.to(receiverId!).emit("unreadUpdate", {
+            conversationId,
+            unreadCount: updatedConversation?.unreadCounts?.[receiverId!] || 0,
           });
+        } catch {
+          socket.emit("error", { message: "Failed to send message" });
         }
       },
     );
+
     // ======================================================
-    // 📩 GET MESSAGES (WITH SECURITY CHECK)
+    // 🔥 MARK AS READ (Map Reset)
+    // ======================================================
+    socket.on("markAsRead", async ({ conversationId }) => {
+      try {
+        await ConversationModel.findByIdAndUpdate(conversationId, {
+          $set: {
+            [`unreadCounts.${userId}`]: 0,
+          },
+        });
+
+        socket.emit("unreadUpdate", {
+          conversationId,
+          unreadCount: 0,
+        });
+      } catch {
+        socket.emit("error", {
+          message: "Failed to mark as read",
+        });
+      }
+    });
+
+    // ======================================================
+    // 📩 GET MESSAGES
     // ======================================================
     socket.on(
       "getMessages",
@@ -257,14 +269,11 @@ const socketHandler = (io: Server) => {
         try {
           const conversation = await ConversationModel.findById(conversationId);
 
-          // 🔐 Security: Only participants can fetch messages
           if (
             !conversation ||
             !conversation.participants.map((p) => p.toString()).includes(userId)
           ) {
-            return socket.emit("error", {
-              message: "Unauthorized",
-            });
+            return socket.emit("error", { message: "Unauthorized" });
           }
 
           const skip = (page - 1) * limit;

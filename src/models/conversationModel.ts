@@ -22,6 +22,12 @@ const ConversationSchema = new Schema(
       default: "TEXT",
     },
 
+    unreadCounts: {
+      type: Map,
+      of: Number,
+      default: {},
+    },
+
     isDisabled: {
       type: Boolean,
       default: false,
