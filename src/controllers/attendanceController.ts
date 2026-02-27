@@ -107,7 +107,8 @@ export const getMyAttendance = async (req: any, res: Response) => {
     }
 
     const attendance = await AttendanceModel.find(filter)
-      .sort({ date: -1 })
+
+      .sort({ year: -1, month: -1, date: -1 })
       .skip(skip)
       .limit(limit)
       .lean();
