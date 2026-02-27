@@ -52,6 +52,17 @@ const socketHandler = (io: Server) => {
       socket.join(conv._id.toString());
     });
 
+    console.log("🟢 Joined rooms for user:", userId, socket.rooms);
+
+    // 🔥 ADDED: Auto send unread summary on connection (WhatsApp behavior)
+    const unreadConversations = existingConversations.filter(
+      (conv: any) => conv.unreadCounts?.[userId] > 0,
+    );
+
+    socket.emit("hasUnread", {
+      totalUnreadConversations: unreadConversations.length,
+    });
+
     // ======================================================
     // 🔍 SEARCH USERS
     // ======================================================
@@ -111,8 +122,6 @@ const socketHandler = (io: Server) => {
               lastMessage: "",
               messageType: "TEXT",
               isDisabled: false,
-
-              // 🔥 ADDED: initialize unreadCounts
               unreadCounts: {
                 [userId]: 0,
                 [receiverId]: 0,
@@ -141,7 +150,7 @@ const socketHandler = (io: Server) => {
     );
 
     // ======================================================
-    // 📜 LIST CONVERSATIONS (🔥 Map Based Unread)
+    // 📜 LIST CONVERSATIONS
     // ======================================================
     socket.on("conversations", async ({ page = 1, limit = 10 }) => {
       try {
@@ -157,7 +166,6 @@ const socketHandler = (io: Server) => {
           .limit(limit)
           .lean();
 
-        // 🔥 ADDED: read unread from Map
         const conversationsWithUnread = convs.map((conv: any) => ({
           ...conv,
           unreadCount: conv.unreadCounts?.[userId] || 0,
@@ -172,7 +180,7 @@ const socketHandler = (io: Server) => {
     });
 
     // ======================================================
-    // ✉ SEND MESSAGE (🔥 Map Increment Logic)
+    // ✉ SEND MESSAGE
     // ======================================================
     socket.on(
       "message",
@@ -196,6 +204,11 @@ const socketHandler = (io: Server) => {
             .map((p) => p.toString())
             .find((id) => id !== userId);
 
+          if (!receiverId) {
+            // 🔧 FIXED: safety check
+            return socket.emit("error", { message: "Receiver not found" });
+          }
+
           const newMessage = await MessageModel.create({
             conversation: conversationId,
             sender: userId,
@@ -208,8 +221,7 @@ const socketHandler = (io: Server) => {
           await ConversationModel.findByIdAndUpdate(conversationId, {
             lastMessage: content || messageType,
             messageType: messageType,
-
-            // 🔥 ADDED: Update unreadCounts map
+            updatedAt: new Date(), // 🔥 ADDED: ensure proper sorting
             $set: {
               [`unreadCounts.${userId}`]: 0,
             },
@@ -224,13 +236,12 @@ const socketHandler = (io: Server) => {
 
           io.to(conversationId).emit("message", populatedMessage);
 
-          // 🔥 ADDED: Emit unread update to receiver
           const updatedConversation =
             await ConversationModel.findById(conversationId).lean();
 
-          io.to(receiverId!).emit("unreadUpdate", {
+          io.to(receiverId).emit("unreadUpdate", {
             conversationId,
-            unreadCount: updatedConversation?.unreadCounts?.[receiverId!] || 0,
+            unreadCount: updatedConversation?.unreadCounts?.[receiverId] || 0,
           });
         } catch {
           socket.emit("error", { message: "Failed to send message" });
@@ -239,7 +250,7 @@ const socketHandler = (io: Server) => {
     );
 
     // ======================================================
-    // 🔥 MARK AS READ (Map Reset)
+    // 🔥 MARK AS READ
     // ======================================================
     socket.on("markAsRead", async ({ conversationId }) => {
       try {
@@ -249,7 +260,8 @@ const socketHandler = (io: Server) => {
           },
         });
 
-        socket.emit("unreadUpdate", {
+        // 🔥 ADDED: emit to ALL user tabs
+        io.to(userId).emit("unreadUpdate", {
           conversationId,
           unreadCount: 0,
         });
