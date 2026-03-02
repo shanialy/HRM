@@ -167,20 +167,50 @@ export const createEmployee = async (req: CustomRequest, res: Response) => {
 };
 export const getAllEmployees = async (req: CustomRequest, res: Response) => {
   try {
+    // 🔹 1. Pagination values nikaal rahe hain query se
     const page = Number(req.query.page) || 1;
-    const limit = Number(req.query.limit) || 5;
+    const limit = Number(req.query.limit) || 15;
     const skip = (page - 1) * limit;
 
-    const employees = await UserModel.find({ role: "EMPLOYEE" })
-      .select("-password -assignedEmployee") // 🔥 hide both
-      .sort({ createdAt: -1 })
+    // 🔹 2. Search value nikaal rahe hain (agar user ne search kiya ho)
+    const search = (req.query.search as string) || "";
+    const searchTerms = search.trim().split(" ");
+
+    // 🔹 3. Base query — hamesha sirf EMPLOYEE role ke users laane hain
+    const query: any = { role: "EMPLOYEE", status: "ACTIVE" };
+
+    // 🔹 4. Agar search exist karta hai to dynamic filter add karo
+    if (search) {
+      query.$or = [
+        { firstName: { $regex: search, $options: "i" } },
+        { lastName: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+        { designation: { $regex: search, $options: "i" } },
+
+        // 🔥 full name support (Ali Khan type search)
+        {
+          $expr: {
+            $regexMatch: {
+              input: { $concat: ["$firstName", " ", "$lastName"] },
+              regex: search,
+              options: "i",
+            },
+          },
+        },
+      ];
+    }
+
+    // 🔹 5. Employees fetch karo with pagination + search
+    const employees = await UserModel.find(query)
+      .select("-password -assignedEmployee") // sensitive fields hide
+      .sort({ createdAt: -1 }) // latest first
       .skip(skip)
       .limit(limit);
 
-    const totalEmployees = await UserModel.countDocuments({
-      role: "EMPLOYEE",
-    });
+    // 🔹 6. Total count for pagination (IMPORTANT: same query use karna)
+    const totalEmployees = await UserModel.countDocuments(query);
 
+    // 🔹 7. Success response
     return ResponseUtil.successResponse(
       res,
       STATUS_CODES.SUCCESS,

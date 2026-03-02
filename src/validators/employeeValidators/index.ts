@@ -5,7 +5,7 @@ export const createEmployeeSchema = z.object({
     firstName: z.string().trim().min(2, "First name is required"),
     lastName: z.string().trim().min(2, "Last name is required"),
     email: z.string().trim().email("Invalid email"),
-    userType: z.string().min(1, "User type is required"),
+    userType: z.string().optional(),
     salary: z.coerce.number().optional(),
     targetAmount: z.coerce.number().optional(),
     designation: z.string().optional(),
