@@ -140,7 +140,7 @@ const socketHandler = (io: Server) => {
 
         const users = await UserModel.find({
           _id: { $ne: userId },
-          role: { $in: ["ADMIN", "EMPLOYEE"] },
+          role: { $in: ["ADMIN", "EMPLOYEE", "CLIENT"] },
           $or: [
             { firstName: { $regex: username, $options: "i" } },
             { lastName: { $regex: username, $options: "i" } },
@@ -259,8 +259,6 @@ const socketHandler = (io: Server) => {
             .lean();
 
           io.to(conversationId).emit("message", populatedMessage);
-          // 🔥 FIX: also emit to receiver personal room (IMPORTANT)
-          io.to(receiverId).emit("message", populatedMessage);
 
           const updatedConversation =
             await ConversationModel.findById(conversationId).lean();
