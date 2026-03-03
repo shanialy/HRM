@@ -6,6 +6,7 @@ import {
   approveRejectLeave,
   getMyAttendance,
   requestLeave,
+  getTodayAttendance,
 } from "../controllers/attendanceController";
 import { validate } from "../middleware/validate";
 
@@ -289,3 +290,10 @@ router.patch(
   approveRejectLeave,
 );
 export default router;
+
+router.get(
+  "/attendance/today",
+  checkAuth,
+  role("EMPLOYEE"),
+  getTodayAttendance,
+);

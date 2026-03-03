@@ -275,3 +275,26 @@ export const approveRejectLeave = async (req: any, res: Response) => {
     return ResponseUtil.handleError(res, err);
   }
 };
+export const getTodayAttendance = async (req: any, res: any) => {
+  try {
+    const userId = req.user.id;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const attendance = await AttendanceModel.findOne({
+      user: userId,
+      date: today,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: attendance || null,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch today attendance",
+    });
+  }
+};
