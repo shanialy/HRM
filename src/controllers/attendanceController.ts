@@ -3,6 +3,7 @@ import ResponseUtil from "../utils/Response/responseUtils";
 import { STATUS_CODES } from "../constants/statusCodes";
 import { AttendanceModel } from "../models/attendanceModel";
 import { ATTENDANCE_CONSTANT } from "../constants/attendance";
+import { AttendanceRequestModel } from "../models/attendanceRequestModel";
 
 // Pakistan Time Helper
 const getPakistanTime = () => {
@@ -335,5 +336,258 @@ export const getTodayAttendance = async (req: any, res: any) => {
       success: false,
       message: "Failed to fetch today attendance",
     });
+  }
+};
+
+export const createAttendanceRequest = async (req: any, res: Response) => {
+  try {
+    const { type, date, time, notes } = req.body;
+
+    /* ========= REQUIRED FIELDS VALIDATION ========= */
+
+    if (!type || !date || !time || !notes) {
+      return ResponseUtil.errorResponse(
+        res,
+        STATUS_CODES.BAD_REQUEST,
+        "All fields are required",
+      );
+    }
+
+    const requestDate = new Date(date);
+    requestDate.setHours(0, 0, 0, 0);
+
+    /* ========= FUTURE DATE VALIDATION ========= */
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (requestDate > today) {
+      return ResponseUtil.errorResponse(
+        res,
+        STATUS_CODES.BAD_REQUEST,
+        "Future date request not allowed",
+      );
+    }
+
+    /* ========= 7 DAYS LIMIT VALIDATION ========= */
+
+    const limitDate = new Date();
+    limitDate.setHours(0, 0, 0, 0);
+    limitDate.setDate(limitDate.getDate() - 7);
+
+    if (requestDate < limitDate) {
+      return ResponseUtil.errorResponse(
+        res,
+        STATUS_CODES.BAD_REQUEST,
+        "You can only request attendance for the last 7 days",
+      );
+    }
+
+    /* ========= DUPLICATE PENDING REQUEST CHECK ========= */
+
+    const existingRequest = await AttendanceRequestModel.findOne({
+      user: req.userId,
+      date: requestDate,
+      type: type,
+      status: "PENDING",
+    });
+
+    if (existingRequest) {
+      return ResponseUtil.errorResponse(
+        res,
+        STATUS_CODES.BAD_REQUEST,
+        "Request already pending for this date",
+      );
+    }
+
+    /* ========= CREATE REQUEST ========= */
+
+    const request = await AttendanceRequestModel.create({
+      user: req.userId,
+      type,
+      date: requestDate,
+      time,
+      notes,
+      status: "PENDING",
+    });
+
+    return ResponseUtil.successResponse(
+      res,
+      STATUS_CODES.SUCCESS,
+      { request },
+      "Attendance request submitted successfully",
+    );
+  } catch (error) {
+    return ResponseUtil.handleError(res, error);
+  }
+};
+
+export const getAttendanceRequests = async (req: any, res: Response) => {
+  try {
+    const { id, page = 1, limit = 20 } = req.query;
+
+    /* ===== SINGLE REQUEST ===== */
+
+    if (id) {
+      const request = await AttendanceRequestModel.findById(id).populate(
+        "user",
+        "firstName lastName email",
+      );
+
+      if (!request) {
+        return ResponseUtil.errorResponse(
+          res,
+          STATUS_CODES.NOT_FOUND,
+          "Request not found",
+        );
+      }
+
+      return ResponseUtil.successResponse(
+        res,
+        STATUS_CODES.SUCCESS,
+        { request },
+        "Attendance request fetched successfully",
+      );
+    }
+
+    /* ===== PAGINATION SETUP ===== */
+
+    const pageNumber = Number(page);
+    const limitNumber = Number(limit);
+
+    const skip = (pageNumber - 1) * limitNumber;
+
+    const totalRequests = await AttendanceRequestModel.countDocuments({
+      status: "PENDING",
+    });
+
+    const totalPages = Math.ceil(totalRequests / limitNumber);
+
+    /* ===== ALL PENDING REQUESTS ===== */
+
+    const requests = await AttendanceRequestModel.find({ status: "PENDING" })
+      .populate("user", "firstName lastName email")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limitNumber);
+
+    return ResponseUtil.successResponse(
+      res,
+      STATUS_CODES.SUCCESS,
+      {
+        requests,
+        pagination: {
+          totalRequests,
+          totalPages,
+          page: pageNumber,
+          limit: limitNumber,
+        },
+      },
+      "Attendance requests fetched successfully",
+    );
+  } catch (error) {
+    return ResponseUtil.handleError(res, error);
+  }
+};
+
+export const reviewAttendanceRequest = async (req: any, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!["APPROVED", "REJECTED"].includes(status)) {
+      return ResponseUtil.errorResponse(
+        res,
+        STATUS_CODES.BAD_REQUEST,
+        "Invalid status",
+      );
+    }
+
+    const request: any = await AttendanceRequestModel.findById(id);
+
+    if (!request) {
+      return ResponseUtil.errorResponse(
+        res,
+        STATUS_CODES.NOT_FOUND,
+        "Request not found",
+      );
+    }
+
+    if (request.status !== "PENDING") {
+      return ResponseUtil.errorResponse(
+        res,
+        STATUS_CODES.BAD_REQUEST,
+        "Request already reviewed",
+      );
+    }
+
+    /* ================= APPROVE ================= */
+
+    if (status === "APPROVED") {
+      const startOfDay = new Date(request.date);
+      startOfDay.setHours(0, 0, 0, 0);
+
+      const endOfDay = new Date(request.date);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      let attendance: any = await AttendanceModel.findOne({
+        user: request.user,
+        date: { $gte: startOfDay, $lte: endOfDay },
+      });
+
+      /* ===== IF ATTENDANCE NOT EXIST ===== */
+
+      if (!attendance) {
+        const newAttendance: any = {
+          user: request.user,
+          year: request.date.getFullYear(),
+          month: request.date.getMonth() + 1,
+          date: request.date,
+          time: {
+            checkIn: null,
+            checkOut: null,
+          },
+        };
+
+        if (request.type === "CHECK_IN") {
+          newAttendance.time.checkIn = request.time;
+        }
+
+        if (request.type === "CHECK_OUT") {
+          newAttendance.time.checkOut = request.time;
+        }
+
+        attendance = await AttendanceModel.create(newAttendance);
+      } else {
+        /* ===== UPDATE EXISTING ATTENDANCE ===== */
+
+        if (request.type === "CHECK_IN") {
+          attendance.time.checkIn = request.time;
+        }
+
+        if (request.type === "CHECK_OUT") {
+          attendance.time.checkOut = request.time;
+        }
+
+        await attendance.save();
+      }
+    }
+
+    /* ================= UPDATE REQUEST ================= */
+
+    request.status = status;
+    request.reviewedBy = req.userId;
+    request.reviewedAt = new Date();
+
+    await request.save();
+
+    return ResponseUtil.successResponse(
+      res,
+      STATUS_CODES.SUCCESS,
+      { request },
+      "Request reviewed successfully",
+    );
+  } catch (error) {
+    return ResponseUtil.handleError(res, error);
   }
 };

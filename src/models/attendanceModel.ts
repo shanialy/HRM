@@ -33,4 +33,6 @@ const AttendanceSchema = new Schema(
   { timestamps: true },
 );
 
+AttendanceSchema.index({ user: 1, date: 1 }, { unique: true });
+
 export const AttendanceModel = model("Attendance", AttendanceSchema);

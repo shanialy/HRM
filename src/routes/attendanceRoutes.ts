@@ -7,6 +7,9 @@ import {
   getMyAttendance,
   requestLeave,
   getTodayAttendance,
+  createAttendanceRequest,
+  getAttendanceRequests,
+  reviewAttendanceRequest,
 } from "../controllers/attendanceController";
 import { validate } from "../middleware/validate";
 
@@ -296,4 +299,25 @@ router.get(
   checkAuth,
   role("EMPLOYEE"),
   getTodayAttendance,
+);
+
+router.post(
+  "/attendance/request",
+  checkAuth,
+  role("EMPLOYEE"),
+  createAttendanceRequest,
+);
+
+router.get(
+  "/attendance/requests",
+  checkAuth,
+  role("ADMIN"),
+  getAttendanceRequests,
+);
+
+router.patch(
+  "/attendance/request/:id",
+  checkAuth,
+  role("ADMIN"),
+  reviewAttendanceRequest,
 );
