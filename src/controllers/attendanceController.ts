@@ -4,11 +4,21 @@ import { STATUS_CODES } from "../constants/statusCodes";
 import { AttendanceModel } from "../models/attendanceModel";
 import { ATTENDANCE_CONSTANT } from "../constants/attendance";
 
+// Pakistan Time Helper
+const getPakistanTime = () => {
+  return new Date(
+    new Date().toLocaleString("en-US", { timeZone: "Asia/Karachi" }),
+  );
+};
+
 export const checkInCheckOut = async (req: any, res: Response) => {
   try {
-    const { type, dateTime, notes } = req.body;
+    const { type, notes } = req.body;
 
-    const providedDate = new Date(dateTime);
+    // Always use Pakistan server time
+    const providedDate = getPakistanTime();
+
+    /* ================= TODAY RANGE ================= */
 
     const startOfDay = new Date(providedDate);
     startOfDay.setHours(0, 0, 0, 0);
@@ -16,13 +26,28 @@ export const checkInCheckOut = async (req: any, res: Response) => {
     const endOfDay = new Date(providedDate);
     endOfDay.setHours(23, 59, 59, 999);
 
-    const todayAttendance: any = await AttendanceModel.findOne({
-      user: req.userId,
-      date: { $gte: startOfDay, $lte: endOfDay },
-    });
-
     /* ============== CHECK IN ============== */
     if (type === "CHECK_IN") {
+      // 1️⃣ Check if open attendance already exists
+      const openAttendance = await AttendanceModel.findOne({
+        user: req.userId,
+        "time.checkOut": null,
+      });
+
+      if (openAttendance) {
+        return ResponseUtil.errorResponse(
+          res,
+          STATUS_CODES.BAD_REQUEST,
+          ATTENDANCE_CONSTANT.ALREADY_CHECKEDIN,
+        );
+      }
+
+      // 2️⃣ Check if user already checked in today
+      const todayAttendance = await AttendanceModel.findOne({
+        user: req.userId,
+        date: { $gte: startOfDay, $lte: endOfDay },
+      });
+
       if (todayAttendance) {
         return ResponseUtil.errorResponse(
           res,
@@ -31,6 +56,7 @@ export const checkInCheckOut = async (req: any, res: Response) => {
         );
       }
 
+      // 3️⃣ Create new attendance
       const attendance = await AttendanceModel.create({
         user: req.userId,
         year: providedDate.getFullYear(),
@@ -53,7 +79,13 @@ export const checkInCheckOut = async (req: any, res: Response) => {
 
     /* ============== CHECK OUT ============== */
     if (type === "CHECK_OUT") {
-      if (!todayAttendance) {
+      // Find open attendance (night shift safe)
+      const attendance: any = await AttendanceModel.findOne({
+        user: req.userId,
+        "time.checkOut": null,
+      });
+
+      if (!attendance) {
         return ResponseUtil.errorResponse(
           res,
           STATUS_CODES.BAD_REQUEST,
@@ -61,7 +93,7 @@ export const checkInCheckOut = async (req: any, res: Response) => {
         );
       }
 
-      if (todayAttendance?.time?.checkOut) {
+      if (attendance?.time?.checkOut) {
         return ResponseUtil.errorResponse(
           res,
           STATUS_CODES.BAD_REQUEST,
@@ -69,23 +101,30 @@ export const checkInCheckOut = async (req: any, res: Response) => {
         );
       }
 
-      todayAttendance.time.checkOut = providedDate;
-      if (notes) todayAttendance.notes = notes;
+      // Close attendance
+      attendance.time.checkOut = providedDate;
 
-      await todayAttendance.save();
+      if (notes) attendance.notes = notes;
+
+      await attendance.save();
 
       return ResponseUtil.successResponse(
         res,
         STATUS_CODES.SUCCESS,
-        { attendance: todayAttendance },
+        { attendance },
         ATTENDANCE_CONSTANT.CHECKOUT_SUCCESS,
       );
     }
+
+    return ResponseUtil.errorResponse(
+      res,
+      STATUS_CODES.BAD_REQUEST,
+      "Invalid attendance type",
+    );
   } catch (err) {
     return ResponseUtil.handleError(res, err);
   }
 };
-
 export const getMyAttendance = async (req: any, res: Response) => {
   try {
     const { month, year } = req.query;
