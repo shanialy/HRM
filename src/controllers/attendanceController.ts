@@ -29,9 +29,11 @@ export const checkInCheckOut = async (req: any, res: Response) => {
 
     /* ============== CHECK IN ============== */
     if (type === "CHECK_IN") {
-      // 1️⃣ Check if open attendance already exists
+      // 1️⃣ Check if open attendance already exists (ignore leave)
       const openAttendance = await AttendanceModel.findOne({
         user: req.userId,
+        isLeave: { $ne: true }, // ✅ ignore leave records
+        date: { $gte: startOfDay, $lte: endOfDay }, // ✅ only today
         "time.checkOut": null,
       });
 
@@ -46,6 +48,7 @@ export const checkInCheckOut = async (req: any, res: Response) => {
       // 2️⃣ Check if user already checked in today
       const todayAttendance = await AttendanceModel.findOne({
         user: req.userId,
+        isLeave: { $ne: true }, // ✅ ignore leave
         date: { $gte: startOfDay, $lte: endOfDay },
       });
 
@@ -67,6 +70,7 @@ export const checkInCheckOut = async (req: any, res: Response) => {
           checkIn: providedDate,
           checkOut: null,
         },
+
         notes,
       });
 
@@ -80,9 +84,10 @@ export const checkInCheckOut = async (req: any, res: Response) => {
 
     /* ============== CHECK OUT ============== */
     if (type === "CHECK_OUT") {
-      // Find open attendance (night shift safe)
+      // Find open attendance (ignore leave)
       const attendance: any = await AttendanceModel.findOne({
         user: req.userId,
+        isLeave: { $ne: true }, // ✅ ignore leave
         "time.checkOut": null,
       });
 
@@ -93,12 +98,25 @@ export const checkInCheckOut = async (req: any, res: Response) => {
           ATTENDANCE_CONSTANT.CHECKIN_NOT_FOUND,
         );
       }
-
       if (attendance?.time?.checkOut) {
         return ResponseUtil.errorResponse(
           res,
           STATUS_CODES.BAD_REQUEST,
           ATTENDANCE_CONSTANT.ALREADY_CHECKEDOUT,
+        );
+      }
+
+      const checkInTime = new Date(attendance.time.checkIn);
+      const now = providedDate;
+
+      const diffHours =
+        (now.getTime() - checkInTime.getTime()) / (1000 * 60 * 60);
+
+      if (diffHours > 20) {
+        return ResponseUtil.errorResponse(
+          res,
+          STATUS_CODES.BAD_REQUEST,
+          "Checkout window expired. Please request admin.",
         );
       }
 
@@ -317,14 +335,17 @@ export const approveRejectLeave = async (req: any, res: Response) => {
 };
 export const getTodayAttendance = async (req: any, res: any) => {
   try {
-    const userId = req.user.id;
+    const userId = req.userId;
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+
+    const end = new Date();
+    end.setHours(23, 59, 59, 999);
 
     const attendance = await AttendanceModel.findOne({
       user: userId,
-      date: today,
+      date: { $gte: start, $lte: end },
     });
 
     return res.status(200).json({
@@ -332,6 +353,7 @@ export const getTodayAttendance = async (req: any, res: any) => {
       data: attendance || null,
     });
   } catch (error) {
+    console.log("TODAY ATTENDANCE ERROR:", error);
     return res.status(500).json({
       success: false,
       message: "Failed to fetch today attendance",
