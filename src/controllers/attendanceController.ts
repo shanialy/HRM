@@ -15,6 +15,13 @@ const getPakistanTime = () => {
 export const checkInCheckOut = async (req: any, res: Response) => {
   try {
     const { type, notes } = req.body;
+    if (!["CHECK_IN", "CHECK_OUT"].includes(type)) {
+      return ResponseUtil.errorResponse(
+        res,
+        STATUS_CODES.BAD_REQUEST,
+        "Invalid attendance type",
+      );
+    }
 
     // Always use Pakistan server time
     const providedDate = getPakistanTime();
@@ -29,34 +36,17 @@ export const checkInCheckOut = async (req: any, res: Response) => {
 
     /* ============== CHECK IN ============== */
     if (type === "CHECK_IN") {
-      // 1️⃣ Check if open attendance already exists (ignore leave)
-      const openAttendance = await AttendanceModel.findOne({
+      const existingAttendance = await AttendanceModel.findOne({
         user: req.userId,
-        isLeave: { $ne: true }, // ✅ ignore leave records
-        date: { $gte: startOfDay, $lte: endOfDay }, // ✅ only today
+        isLeave: { $ne: true },
         "time.checkOut": null,
-      });
+      }).sort({ date: -1 });
 
-      if (openAttendance) {
+      if (existingAttendance) {
         return ResponseUtil.errorResponse(
           res,
           STATUS_CODES.BAD_REQUEST,
-          ATTENDANCE_CONSTANT.ALREADY_CHECKEDIN,
-        );
-      }
-
-      // 2️⃣ Check if user already checked in today
-      const todayAttendance = await AttendanceModel.findOne({
-        user: req.userId,
-        isLeave: { $ne: true }, // ✅ ignore leave
-        date: { $gte: startOfDay, $lte: endOfDay },
-      });
-
-      if (todayAttendance) {
-        return ResponseUtil.errorResponse(
-          res,
-          STATUS_CODES.BAD_REQUEST,
-          ATTENDANCE_CONSTANT.ALREADY_CHECKEDIN,
+          "Please checkout first before new checkin",
         );
       }
 
@@ -87,22 +77,15 @@ export const checkInCheckOut = async (req: any, res: Response) => {
       // Find open attendance (ignore leave)
       const attendance: any = await AttendanceModel.findOne({
         user: req.userId,
-        isLeave: { $ne: true }, // ✅ ignore leave
+        isLeave: { $ne: true },
         "time.checkOut": null,
-      });
+      }).sort({ date: -1 });
 
       if (!attendance) {
         return ResponseUtil.errorResponse(
           res,
           STATUS_CODES.BAD_REQUEST,
           ATTENDANCE_CONSTANT.CHECKIN_NOT_FOUND,
-        );
-      }
-      if (attendance?.time?.checkOut) {
-        return ResponseUtil.errorResponse(
-          res,
-          STATUS_CODES.BAD_REQUEST,
-          ATTENDANCE_CONSTANT.ALREADY_CHECKEDOUT,
         );
       }
 
@@ -134,12 +117,6 @@ export const checkInCheckOut = async (req: any, res: Response) => {
         ATTENDANCE_CONSTANT.CHECKOUT_SUCCESS,
       );
     }
-
-    return ResponseUtil.errorResponse(
-      res,
-      STATUS_CODES.BAD_REQUEST,
-      "Invalid attendance type",
-    );
   } catch (err) {
     return ResponseUtil.handleError(res, err);
   }
@@ -198,6 +175,8 @@ export const adminGetAllAttendance = async (req: any, res: Response) => {
 
     const { employeeId, month, year, from, to } = req.query;
 
+    console.log("MONTH FROM FRONTEND:", month);
+
     const page = Number(req.query.page) || 1;
     const limit = Number(req.query.limit) || 20;
     const skip = (page - 1) * limit;
@@ -227,6 +206,8 @@ export const adminGetAllAttendance = async (req: any, res: Response) => {
         filter.date.$lte = new Date(to);
       }
     }
+
+    console.log("ATTENDANCE FILTER:", filter);
 
     const attendance = await AttendanceModel.find(filter)
       .populate("user", "firstName lastName email role")
@@ -337,10 +318,15 @@ export const getTodayAttendance = async (req: any, res: any) => {
   try {
     const userId = req.userId;
 
-    const start = new Date();
+    const now = new Date();
+
+    const pakistanOffset = 5 * 60 * 60 * 1000;
+    const pakistanNow = new Date(now.getTime() + pakistanOffset);
+
+    const start = new Date(pakistanNow);
     start.setHours(0, 0, 0, 0);
 
-    const end = new Date();
+    const end = new Date(pakistanNow);
     end.setHours(23, 59, 59, 999);
 
     const attendance = await AttendanceModel.findOne({

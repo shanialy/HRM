@@ -9,10 +9,12 @@ import { sendEmail } from "../utils/SendEmail";
 import { emailTemplateGeneric } from "../utils/SendEmail/templates";
 
 import { UserModel } from "../models/userModel";
+
 import { CustomRequest } from "../interfaces/auth";
 import { CLIENT_CONSTANT } from "../constants/client";
 import crypto from "crypto"; // 🆕 ADDED (secure random generator)
 import { ConversationModel } from "../models/conversationModel";
+import { MessageModel } from "../models/messageModel";
 
 export const createClient = async (req: any, res: Response) => {
   try {
@@ -238,6 +240,7 @@ export const updateClient = async (req: CustomRequest, res: Response) => {
 };
 
 export const deleteClient = async (req: CustomRequest, res: Response) => {
+  console.log("DELETE CLIENT API CALLED");
   try {
     const { id } = req.params;
 
@@ -255,7 +258,6 @@ export const deleteClient = async (req: CustomRequest, res: Response) => {
       );
     }
 
-    // 🔥 If already deleted, still return success (clean UX)
     if (client.status === "INACTIVE") {
       return ResponseUtil.errorResponse(
         res,
@@ -264,6 +266,26 @@ export const deleteClient = async (req: CustomRequest, res: Response) => {
       );
     }
 
+    // 🔥 Find client conversations
+    const conversations = await ConversationModel.find({
+      participants: id,
+    });
+    console.log("CLIENT ID:", id);
+    console.log("FOUND CONVERSATIONS:", conversations);
+
+    const conversationIds = conversations.map((c) => c._id);
+
+    // 🔥 Delete all messages of those conversations
+    await MessageModel.deleteMany({
+      conversationId: { $in: conversationIds },
+    });
+
+    // 🔥 Delete conversations
+    await ConversationModel.deleteMany({
+      participants: id,
+    });
+
+    // 🔥 Soft delete client
     client.status = "INACTIVE";
     await client.save();
 
