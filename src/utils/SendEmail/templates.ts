@@ -93,13 +93,13 @@ export const emailTemplateGeneric = (
       </div>
 
       <p>Click the button below to login:</p>
-      <a href="https://tsh-hrm.com" class="cta-button">Login to TSH</a>
+      <a href="https://tecksolutionhub-hrm.netlify.app" class="cta-button">Login to TSH</a>
 
       <p>If you did not expect this email, please ignore it.</p>
     </div>
     <div class="footer">
       &copy; ${new Date().getFullYear()} Teck Solution Hub. All rights reserved.<br>
-      <a href="https://tsh-hrm.com" style="color:#d32f2f;text-decoration:none;">https://tsh-hrm.com</a> <!-- 🔥 CHANGED -->
+      <a href="https://tecksolutionhub.com" style="color:#d32f2f;text-decoration:none;">https://tecksolutionhub.com</a>
     </div>
   </div>
 </body>
