@@ -15,6 +15,8 @@ const getPakistanTime = () => {
 export const checkInCheckOut = async (req: any, res: Response) => {
   try {
     const { type, notes } = req.body;
+
+    // ================= VALIDATE TYPE =================
     if (!["CHECK_IN", "CHECK_OUT"].includes(type)) {
       return ResponseUtil.errorResponse(
         res,
@@ -23,26 +25,43 @@ export const checkInCheckOut = async (req: any, res: Response) => {
       );
     }
 
-    // Always use Pakistan server time
-    const providedDate = getPakistanTime();
+    // ================= SERVER TIME =================
+    // Always use server time to prevent client manipulation
+    const now = getPakistanTime();
 
-    /* ================= TODAY RANGE ================= */
+    // ================= NORMALIZE DATE =================
+    // Attendance date will always be the CHECK-IN date
+    const attendanceDate = new Date(now);
+    attendanceDate.setHours(0, 0, 0, 0);
 
-    const startOfDay = new Date(providedDate);
-    startOfDay.setHours(0, 0, 0, 0);
+    /* =================================================
+        CHECK IN
+    ================================================= */
 
-    const endOfDay = new Date(providedDate);
-    endOfDay.setHours(23, 59, 59, 999);
-
-    /* ============== CHECK IN ============== */
     if (type === "CHECK_IN") {
-      const existingAttendance = await AttendanceModel.findOne({
+      // 🔴 Rule 1: Only ONE attendance per day
+      const todayAttendance = await AttendanceModel.findOne({
+        user: req.userId,
+        date: attendanceDate,
+        isLeave: { $ne: true },
+      });
+
+      if (todayAttendance) {
+        return ResponseUtil.errorResponse(
+          res,
+          STATUS_CODES.BAD_REQUEST,
+          "Attendance already marked for today",
+        );
+      }
+
+      // 🔴 Rule 2: User cannot check in if previous attendance is still open
+      const openAttendance = await AttendanceModel.findOne({
         user: req.userId,
         isLeave: { $ne: true },
         "time.checkOut": null,
-      }).sort({ date: -1 });
+      });
 
-      if (existingAttendance) {
+      if (openAttendance) {
         return ResponseUtil.errorResponse(
           res,
           STATUS_CODES.BAD_REQUEST,
@@ -50,18 +69,17 @@ export const checkInCheckOut = async (req: any, res: Response) => {
         );
       }
 
-      // 3️⃣ Create new attendance
+      // 🔴 Create attendance document
       const attendance = await AttendanceModel.create({
         user: req.userId,
-        year: providedDate.getFullYear(),
-        month: providedDate.getMonth() + 1,
-        date: providedDate,
+        year: attendanceDate.getFullYear(),
+        month: attendanceDate.getMonth() + 1,
+        date: attendanceDate, // normalized date
         time: {
-          checkIn: providedDate,
+          checkIn: now,
           checkOut: null,
         },
-
-        notes,
+        notes: notes ? `Check-In: ${notes}` : "Check-In",
       });
 
       return ResponseUtil.successResponse(
@@ -72,14 +90,17 @@ export const checkInCheckOut = async (req: any, res: Response) => {
       );
     }
 
-    /* ============== CHECK OUT ============== */
+    /* =================================================
+        CHECK OUT
+    ================================================= */
+
     if (type === "CHECK_OUT") {
-      // Find open attendance (ignore leave)
+      // 🔴 Find the open attendance (where checkout is still null)
       const attendance: any = await AttendanceModel.findOne({
         user: req.userId,
         isLeave: { $ne: true },
         "time.checkOut": null,
-      }).sort({ date: -1 });
+      }).sort({ createdAt: -1 });
 
       if (!attendance) {
         return ResponseUtil.errorResponse(
@@ -89,9 +110,8 @@ export const checkInCheckOut = async (req: any, res: Response) => {
         );
       }
 
+      // 🔴 Prevent checkout after 20 hours
       const checkInTime = new Date(attendance.time.checkIn);
-      const now = providedDate;
-
       const diffHours =
         (now.getTime() - checkInTime.getTime()) / (1000 * 60 * 60);
 
@@ -103,11 +123,12 @@ export const checkInCheckOut = async (req: any, res: Response) => {
         );
       }
 
-      // Close attendance
-      attendance.time.checkOut = providedDate;
+      // 🔴 Close attendance
+      attendance.time.checkOut = now;
 
-      if (notes) attendance.notes = notes;
-
+      attendance.notes = attendance.notes
+        ? `${attendance.notes} | Check-Out: ${notes || ""}`
+        : `Check-Out: ${notes || ""}`;
       await attendance.save();
 
       return ResponseUtil.successResponse(
@@ -332,7 +353,7 @@ export const getTodayAttendance = async (req: any, res: any) => {
     const attendance = await AttendanceModel.findOne({
       user: userId,
       date: { $gte: start, $lte: end },
-    });
+    }).sort({ createdAt: -1 });
 
     return res.status(200).json({
       success: true,

@@ -63,11 +63,6 @@ export const checkInCheckOutSchema = z.object({
         message: "Invalid attendance type",
       }),
     }),
-
-    dateTime: z.string().refine((val) => !isNaN(new Date(val).getTime()), {
-      message: "dateTime must be a valid date",
-    }),
-
     notes: z.string().optional(),
   }),
 });
