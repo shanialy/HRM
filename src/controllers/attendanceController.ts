@@ -14,7 +14,7 @@ const getPakistanTime = () => {
 
 export const checkInCheckOut = async (req: any, res: Response) => {
   try {
-    const { type, notes } = req.body;
+    const { type, notes, latitude, longitude } = req.body;
 
     // ================= VALIDATE TYPE =================
     if (!["CHECK_IN", "CHECK_OUT"].includes(type)) {
@@ -22,6 +22,65 @@ export const checkInCheckOut = async (req: any, res: Response) => {
         res,
         STATUS_CODES.BAD_REQUEST,
         "Invalid attendance type",
+      );
+    }
+    // ================= LOCATION VALIDATION =================
+    // 🔴 Prevent attendance if location is not provided (GPS off / blocked)
+    if (latitude === undefined || longitude === undefined) {
+      return ResponseUtil.errorResponse(
+        res,
+        STATUS_CODES.BAD_REQUEST,
+        "Location is required. Please enable GPS to mark attendance.",
+      );
+    }
+    if (typeof latitude !== "number" || typeof longitude !== "number") {
+      return ResponseUtil.errorResponse(
+        res,
+        STATUS_CODES.BAD_REQUEST,
+        "Invalid location coordinates",
+      );
+    }
+    // ================= OFFICE LOCATION CONFIG =================
+    // 🟢 Office coordinates (Google Maps se liye gaye)
+    const OFFICE_LAT = Number(process.env.OFFICE_LAT);
+    const OFFICE_LNG = Number(process.env.OFFICE_LNG);
+    const ALLOWED_RADIUS = Number(process.env.OFFICE_RADIUS);
+
+    // ================= DISTANCE FUNCTION =================
+    // 🟢 Haversine formula to calculate distance between employee and office
+    function getDistance(
+      lat1: number,
+      lon1: number,
+      lat2: number,
+      lon2: number,
+    ) {
+      const R = 6371e3; // Earth radius in meters
+      const φ1 = (lat1 * Math.PI) / 180;
+      const φ2 = (lat2 * Math.PI) / 180;
+      const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+      const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+
+      const a =
+        Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+        Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+      return R * c;
+    }
+
+    // ================= LOCATION VALIDATION =================
+    // 🟢 Calculate distance between employee and office
+    const distance = Math.round(
+      getDistance(latitude, longitude, OFFICE_LAT, OFFICE_LNG),
+    );
+
+    // 🔴 Block attendance if employee is outside 500 meters
+    if (distance > ALLOWED_RADIUS) {
+      return ResponseUtil.errorResponse(
+        res,
+        STATUS_CODES.BAD_REQUEST,
+        "You must be within 500 meters of the office to mark attendance",
       );
     }
 
@@ -80,6 +139,8 @@ export const checkInCheckOut = async (req: any, res: Response) => {
           checkOut: null,
         },
         notes: notes ? `Check-In: ${notes}` : "Check-In",
+        checkInLatitude: latitude,
+        checkInLongitude: longitude,
       });
 
       return ResponseUtil.successResponse(
@@ -126,10 +187,14 @@ export const checkInCheckOut = async (req: any, res: Response) => {
       // 🔴 Close attendance
       attendance.time.checkOut = now;
 
+      // 🟢 Save employee location at checkout
+      attendance.checkOutLatitude = latitude;
+      attendance.checkOutLongitude = longitude;
       attendance.notes = attendance.notes
         ? `${attendance.notes} | Check-Out: ${notes || ""}`
         : `Check-Out: ${notes || ""}`;
-      await attendance.save();
+
+      await attendance.save(); // save updated attendance with checkout time and location
 
       return ResponseUtil.successResponse(
         res,
