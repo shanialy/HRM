@@ -80,7 +80,7 @@ export const checkInCheckOut = async (req: any, res: Response) => {
       return ResponseUtil.errorResponse(
         res,
         STATUS_CODES.BAD_REQUEST,
-        "You must be within 500 meters of the office to mark attendance",
+        `You must be within ${ALLOWED_RADIUS} meters of the office`,
       );
     }
 
