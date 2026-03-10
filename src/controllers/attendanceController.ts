@@ -6,15 +6,28 @@ import { ATTENDANCE_CONSTANT } from "../constants/attendance";
 import { AttendanceRequestModel } from "../models/attendanceRequestModel";
 
 // Pakistan Time Helper
+// Pakistan time string generator
 const getPakistanTime = () => {
-  return new Date(
-    new Date().toLocaleString("en-US", { timeZone: "Asia/Karachi" }),
-  );
-};
+  const now = new Date();
 
+  const date = now.toLocaleDateString("en-CA", {
+    timeZone: "Asia/Karachi",
+  });
+
+  const time = now.toLocaleTimeString("en-GB", {
+    timeZone: "Asia/Karachi",
+    hour12: false,
+  });
+
+  return {
+    date, // YYYY-MM-DD
+    time, // HH:mm:ss
+    full: `${date} ${time}`, // complete PKT timestamp
+  };
+};
 export const checkInCheckOut = async (req: any, res: Response) => {
   try {
-    const { type, notes, latitude, longitude } = req.body;
+    const { type, notes } = req.body;
 
     // ================= VALIDATE TYPE =================
     if (!["CHECK_IN", "CHECK_OUT"].includes(type)) {
@@ -24,87 +37,91 @@ export const checkInCheckOut = async (req: any, res: Response) => {
         "Invalid attendance type",
       );
     }
-    // ================= LOCATION VALIDATION =================
-    // 🔴 Prevent attendance if location is not provided (GPS off / blocked)
-    if (latitude === undefined || longitude === undefined) {
-      return ResponseUtil.errorResponse(
-        res,
-        STATUS_CODES.BAD_REQUEST,
-        "Location is required. Please enable GPS to mark attendance.",
-      );
-    }
-    if (typeof latitude !== "number" || typeof longitude !== "number") {
-      return ResponseUtil.errorResponse(
-        res,
-        STATUS_CODES.BAD_REQUEST,
-        "Invalid location coordinates",
-      );
-    }
-    // ================= OFFICE LOCATION CONFIG =================
-    // 🟢 Office coordinates (Google Maps se liye gaye)
-    const OFFICE_LAT = Number(process.env.OFFICE_LAT);
-    const OFFICE_LNG = Number(process.env.OFFICE_LNG);
-    const ALLOWED_RADIUS = Number(process.env.OFFICE_RADIUS);
+    // // ================= LOCATION VALIDATION =================
+    // // 🔴 Prevent attendance if location is not provided (GPS off / blocked)
+    // if (latitude === undefined || longitude === undefined) {
+    //   return ResponseUtil.errorResponse(
+    //     res,
+    //     STATUS_CODES.BAD_REQUEST,
+    //     "Location is required. Please enable GPS to mark attendance.",
+    //   );
+    // }
+    // if (typeof latitude !== "number" || typeof longitude !== "number") {
+    //   return ResponseUtil.errorResponse(
+    //     res,
+    //     STATUS_CODES.BAD_REQUEST,
+    //     "Invalid location coordinates",
+    //   );
+    // }
+    // // ================= OFFICE LOCATION CONFIG =================
+    // // 🟢 Office coordinates (Google Maps se liye gaye)
+    // const OFFICE_LAT = Number(process.env.OFFICE_LAT);
+    // const OFFICE_LNG = Number(process.env.OFFICE_LNG);
+    // const ALLOWED_RADIUS = Number(process.env.OFFICE_RADIUS);
 
-    // ================= DISTANCE FUNCTION =================
-    // 🟢 Haversine formula to calculate distance between employee and office
-    function getDistance(
-      lat1: number,
-      lon1: number,
-      lat2: number,
-      lon2: number,
-    ) {
-      const R = 6371e3; // Earth radius in meters
-      const φ1 = (lat1 * Math.PI) / 180;
-      const φ2 = (lat2 * Math.PI) / 180;
-      const Δφ = ((lat2 - lat1) * Math.PI) / 180;
-      const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+    // // ================= DISTANCE FUNCTION =================
+    // // 🟢 Haversine formula to calculate distance between employee and office
+    // function getDistance(
+    //   lat1: number,
+    //   lon1: number,
+    //   lat2: number,
+    //   lon2: number,
+    // ) {
+    //   const R = 6371e3; // Earth radius in meters
+    //   const φ1 = (lat1 * Math.PI) / 180;
+    //   const φ2 = (lat2 * Math.PI) / 180;
+    //   const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+    //   const Δλ = ((lon2 - lon1) * Math.PI) / 180;
 
-      const a =
-        Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-        Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    //   const a =
+    //     Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+    //     Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
 
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    //   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
-      return R * c;
-    }
+    //   return R * c;
+    // }
 
-    // ================= LOCATION VALIDATION =================
-    // 🟢 Calculate distance between employee and office
-    const distance = Math.round(
-      getDistance(latitude, longitude, OFFICE_LAT, OFFICE_LNG),
-    );
+    // // ================= LOCATION VALIDATION =================
+    // // 🟢 Calculate distance between employee and office
+    // const distance = Math.round(
+    //   getDistance(latitude, longitude, OFFICE_LAT, OFFICE_LNG),
+    // );
 
-    // 🔴 Block attendance if employee is outside 500 meters
-    if (distance > ALLOWED_RADIUS) {
-      return ResponseUtil.errorResponse(
-        res,
-        STATUS_CODES.BAD_REQUEST,
-        `You must be within ${ALLOWED_RADIUS} meters of the office`,
-      );
-    }
+    // // 🔴 Block attendance if employee is outside 500 meters
+    // if (distance > ALLOWED_RADIUS) {
+    //   return ResponseUtil.errorResponse(
+    //     res,
+    //     STATUS_CODES.BAD_REQUEST,
+    //     `You must be within ${ALLOWED_RADIUS} meters of the office`,
+    //   );
+    // }
 
     // ================= SERVER TIME =================
     // Always use server time to prevent client manipulation
     const now = getPakistanTime();
 
-    // ================= NORMALIZE DATE =================
-    // Attendance date will always be the CHECK-IN date
-    const attendanceDate = new Date(now);
-    attendanceDate.setHours(0, 0, 0, 0);
-
+    const attendanceDate = now.date; // PKT date string
     /* =================================================
         CHECK IN
     ================================================= */
 
+    /* =================================================
+   CHECK IN
+================================================= */
+
     if (type === "CHECK_IN") {
-      // 🔴 Rule 1: Only ONE attendance per day
+      // 🔹 STEP 1
+      // attendanceDate already PKT date string hona chahiye
+      // example: "2026-03-11"
+
       const todayAttendance = await AttendanceModel.findOne({
         user: req.userId,
-        date: attendanceDate,
+        date: attendanceDate, // PKT date se compare hoga
         isLeave: { $ne: true },
       });
 
+      // 🔴 Agar aaj ka attendance already hai to block
       if (todayAttendance) {
         return ResponseUtil.errorResponse(
           res,
@@ -113,7 +130,8 @@ export const checkInCheckOut = async (req: any, res: Response) => {
         );
       }
 
-      // 🔴 Rule 2: User cannot check in if previous attendance is still open
+      // 🔹 STEP 2
+      // Check karo koi previous attendance open to nahi
       const openAttendance = await AttendanceModel.findOne({
         user: req.userId,
         isLeave: { $ne: true },
@@ -128,21 +146,40 @@ export const checkInCheckOut = async (req: any, res: Response) => {
         );
       }
 
-      // 🔴 Create attendance document
+      // 🔹 STEP 3
+      // PKT date string se year aur month nikaalna
+      // attendanceDate example: "2026-03-11"
+
+      const year = Number(attendanceDate.split("-")[0]);
+      const month = Number(attendanceDate.split("-")[1]);
+
+      // 🔹 STEP 4
+      // attendance create karna
+      // checkIn me PKT datetime store hoga (now.full)
+
       const attendance = await AttendanceModel.create({
         user: req.userId,
-        year: attendanceDate.getFullYear(),
-        month: attendanceDate.getMonth() + 1,
-        date: attendanceDate, // normalized date
+
+        year: year,
+        month: month,
+
+        // 🔹 PKT date string DB me store hogi
+        date: attendanceDate,
+
         time: {
-          checkIn: now,
+          // 🔹 PKT full datetime store hoga
+          checkIn: now.full,
           checkOut: null,
         },
+
         notes: notes ? `Check-In: ${notes}` : "Check-In",
-        checkInLatitude: latitude,
-        checkInLongitude: longitude,
+
+        // checkInLatitude: latitude,
+        // checkInLongitude: longitude,
       });
 
+      // 🔹 STEP 5
+      // success response return
       return ResponseUtil.successResponse(
         res,
         STATUS_CODES.SUCCESS,
@@ -150,13 +187,14 @@ export const checkInCheckOut = async (req: any, res: Response) => {
         ATTENDANCE_CONSTANT.CHECKIN_SUCCESS,
       );
     }
-
     /* =================================================
         CHECK OUT
     ================================================= */
 
     if (type === "CHECK_OUT") {
-      // 🔴 Find the open attendance (where checkout is still null)
+      // 🔴 STEP 1
+      // Find the open attendance (jisme checkout null ho)
+
       const attendance: any = await AttendanceModel.findOne({
         user: req.userId,
         isLeave: { $ne: true },
@@ -171,10 +209,23 @@ export const checkInCheckOut = async (req: any, res: Response) => {
         );
       }
 
-      // 🔴 Prevent checkout after 20 hours
+      // 🔴 STEP 2
+      // checkIn PKT string hai (example: "2026-03-11 10:15:22")
+      // usko Date object me convert karna padega calculation ke liye
+
       const checkInTime = new Date(attendance.time.checkIn);
+
+      // 🔴 CHANGE HERE
+      // now object hai {date,time,full}
+      // isliye new Date(now.full) use karna hoga
+
+      const currentTime = new Date(now.full);
+
       const diffHours =
-        (now.getTime() - checkInTime.getTime()) / (1000 * 60 * 60);
+        (currentTime.getTime() - checkInTime.getTime()) / (1000 * 60 * 60);
+
+      // 🔴 STEP 3
+      // Prevent checkout after 20 hours
 
       if (diffHours > 20) {
         return ResponseUtil.errorResponse(
@@ -184,17 +235,23 @@ export const checkInCheckOut = async (req: any, res: Response) => {
         );
       }
 
-      // 🔴 Close attendance
-      attendance.time.checkOut = now;
+      // 🔴 STEP 4
+      // checkout time PKT string me store karo
+
+      attendance.time.checkOut = now.full;
 
       // 🟢 Save employee location at checkout
-      attendance.checkOutLatitude = latitude;
-      attendance.checkOutLongitude = longitude;
+      // attendance.checkOutLatitude = latitude;
+      // attendance.checkOutLongitude = longitude;
+
       attendance.notes = attendance.notes
         ? `${attendance.notes} | Check-Out: ${notes || ""}`
         : `Check-Out: ${notes || ""}`;
 
-      await attendance.save(); // save updated attendance with checkout time and location
+      // 🔴 STEP 5
+      // save updated record
+
+      await attendance.save();
 
       return ResponseUtil.successResponse(
         res,
@@ -207,6 +264,7 @@ export const checkInCheckOut = async (req: any, res: Response) => {
     return ResponseUtil.handleError(res, err);
   }
 };
+
 export const getMyAttendance = async (req: any, res: Response) => {
   try {
     const { month, year } = req.query;
@@ -233,6 +291,10 @@ export const getMyAttendance = async (req: any, res: Response) => {
       .skip(skip)
       .limit(limit)
       .lean();
+
+    (attendance as any[]).forEach((a) => {
+      console.log("DATE:", a.date, "ISLEAVE:", a.isLeave);
+    });
 
     const totalAttendance = await AttendanceModel.countDocuments(filter);
 
@@ -402,34 +464,38 @@ export const approveRejectLeave = async (req: any, res: Response) => {
 };
 export const getTodayAttendance = async (req: any, res: any) => {
   try {
-    const userId = req.userId;
+    // 🔹 STEP 1
+    // Pakistan date lo
+    const now = getPakistanTime();
+    const todayDate = now.date; // example: "2026-03-11"
 
-    const now = new Date();
-
-    const pakistanOffset = 5 * 60 * 60 * 1000;
-    const pakistanNow = new Date(now.getTime() + pakistanOffset);
-
-    const start = new Date(pakistanNow);
-    start.setHours(0, 0, 0, 0);
-
-    const end = new Date(pakistanNow);
-    end.setHours(23, 59, 59, 999);
-
+    // 🔹 STEP 2
+    // PKT date se record find karo
     const attendance = await AttendanceModel.findOne({
-      user: userId,
-      date: { $gte: start, $lte: end },
-    }).sort({ createdAt: -1 });
+      user: req.userId,
+      date: todayDate,
+      isLeave: { $ne: true },
+    });
 
-    return res.status(200).json({
-      success: true,
-      data: attendance || null,
-    });
-  } catch (error) {
-    console.log("TODAY ATTENDANCE ERROR:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Failed to fetch today attendance",
-    });
+    // 🔹 STEP 3
+    if (!attendance) {
+      return ResponseUtil.successResponse(
+        res,
+        STATUS_CODES.SUCCESS,
+        { attendance: null },
+        "No attendance found for today",
+      );
+    }
+
+    // 🔹 STEP 4
+    return ResponseUtil.successResponse(
+      res,
+      STATUS_CODES.SUCCESS,
+      { attendance },
+      "Today attendance fetched successfully",
+    );
+  } catch (err) {
+    return ResponseUtil.handleError(res, err);
   }
 };
 
@@ -437,8 +503,7 @@ export const createAttendanceRequest = async (req: any, res: Response) => {
   try {
     const { type, date, time, notes } = req.body;
 
-    /* ========= REQUIRED FIELDS VALIDATION ========= */
-
+    // ✅ Required fields check
     if (!type || !date || !time || !notes) {
       return ResponseUtil.errorResponse(
         res,
@@ -447,10 +512,17 @@ export const createAttendanceRequest = async (req: any, res: Response) => {
       );
     }
 
+    if (!["CHECK_IN", "CHECK_OUT"].includes(type)) {
+      return ResponseUtil.errorResponse(
+        res,
+        STATUS_CODES.BAD_REQUEST,
+        "Invalid attendance type",
+      );
+    }
+
+    // ✅ Convert to PKT date
     const requestDate = new Date(date);
     requestDate.setHours(0, 0, 0, 0);
-
-    /* ========= FUTURE DATE VALIDATION ========= */
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -462,8 +534,6 @@ export const createAttendanceRequest = async (req: any, res: Response) => {
         "Future date request not allowed",
       );
     }
-
-    /* ========= 7 DAYS LIMIT VALIDATION ========= */
 
     const limitDate = new Date();
     limitDate.setHours(0, 0, 0, 0);
@@ -477,12 +547,11 @@ export const createAttendanceRequest = async (req: any, res: Response) => {
       );
     }
 
-    /* ========= DUPLICATE PENDING REQUEST CHECK ========= */
-
+    // ✅ Duplicate pending request
     const existingRequest = await AttendanceRequestModel.findOne({
       user: req.userId,
       date: requestDate,
-      type: type,
+      type,
       status: "PENDING",
     });
 
@@ -494,8 +563,7 @@ export const createAttendanceRequest = async (req: any, res: Response) => {
       );
     }
 
-    /* ========= CREATE REQUEST ========= */
-
+    // ✅ Create request
     const request = await AttendanceRequestModel.create({
       user: req.userId,
       type,
@@ -520,14 +588,12 @@ export const getAttendanceRequests = async (req: any, res: Response) => {
   try {
     const { id, page = 1, limit = 20 } = req.query;
 
-    /* ===== SINGLE REQUEST ===== */
-
     if (id) {
+      // ✅ Fetch single request
       const request = await AttendanceRequestModel.findById(id).populate(
         "user",
         "firstName lastName email",
       );
-
       if (!request) {
         return ResponseUtil.errorResponse(
           res,
@@ -535,7 +601,6 @@ export const getAttendanceRequests = async (req: any, res: Response) => {
           "Request not found",
         );
       }
-
       return ResponseUtil.successResponse(
         res,
         STATUS_CODES.SUCCESS,
@@ -544,20 +609,15 @@ export const getAttendanceRequests = async (req: any, res: Response) => {
       );
     }
 
-    /* ===== PAGINATION SETUP ===== */
-
+    // ✅ Pagination for all pending requests
     const pageNumber = Number(page);
     const limitNumber = Number(limit);
-
     const skip = (pageNumber - 1) * limitNumber;
 
     const totalRequests = await AttendanceRequestModel.countDocuments({
       status: "PENDING",
     });
-
     const totalPages = Math.ceil(totalRequests / limitNumber);
-
-    /* ===== ALL PENDING REQUESTS ===== */
 
     const requests = await AttendanceRequestModel.find({ status: "PENDING" })
       .populate("user", "firstName lastName email")
@@ -589,6 +649,7 @@ export const reviewAttendanceRequest = async (req: any, res: Response) => {
     const { id } = req.params;
     const { status } = req.body;
 
+    // ✅ Validate status
     if (!["APPROVED", "REJECTED"].includes(status)) {
       return ResponseUtil.errorResponse(
         res,
@@ -598,7 +659,6 @@ export const reviewAttendanceRequest = async (req: any, res: Response) => {
     }
 
     const request: any = await AttendanceRequestModel.findById(id);
-
     if (!request) {
       return ResponseUtil.errorResponse(
         res,
@@ -615,64 +675,78 @@ export const reviewAttendanceRequest = async (req: any, res: Response) => {
       );
     }
 
-    /* ================= APPROVE ================= */
-
+    // ================= APPROVE =================
     if (status === "APPROVED") {
-      const startOfDay = new Date(request.date);
-      startOfDay.setHours(0, 0, 0, 0);
+      // Ensure request.date is string in YYYY-MM-DD
+      let requestDateStr: string;
+      if (typeof request.date === "string") requestDateStr = request.date;
+      else if (request.date instanceof Date)
+        requestDateStr = request.date.toLocaleDateString("en-CA", {
+          timeZone: "Asia/Karachi",
+        });
+      else
+        return ResponseUtil.errorResponse(
+          res,
+          STATUS_CODES.BAD_REQUEST,
+          "Invalid request date",
+        );
 
-      const endOfDay = new Date(request.date);
-      endOfDay.setHours(23, 59, 59, 999);
+      const year = Number(requestDateStr.split("-")[0]);
+      const month = Number(requestDateStr.split("-")[1]);
 
+      if (isNaN(year) || isNaN(month)) {
+        return ResponseUtil.errorResponse(
+          res,
+          STATUS_CODES.BAD_REQUEST,
+          "Invalid year/month in request date",
+        );
+      }
+
+      if (!request.time) {
+        return ResponseUtil.errorResponse(
+          res,
+          STATUS_CODES.BAD_REQUEST,
+          "Request time is required",
+        );
+      }
+
+      // Find existing attendance
       let attendance: any = await AttendanceModel.findOne({
         user: request.user,
-        date: { $gte: startOfDay, $lte: endOfDay },
+        date: requestDateStr,
       });
 
-      /* ===== IF ATTENDANCE NOT EXIST ===== */
-
       if (!attendance) {
-        const newAttendance: any = {
+        // Create new attendance
+        attendance = await AttendanceModel.create({
           user: request.user,
-          year: request.date.getFullYear(),
-          month: request.date.getMonth() + 1,
-          date: request.date,
+          year,
+          month,
+          date: requestDateStr,
           time: {
-            checkIn: null,
-            checkOut: null,
+            checkIn: request.type === "CHECK_IN" ? request.time : null,
+            checkOut: request.type === "CHECK_OUT" ? request.time : null,
           },
-        };
-
-        if (request.type === "CHECK_IN") {
-          newAttendance.time.checkIn = request.time;
-        }
-
-        if (request.type === "CHECK_OUT") {
-          newAttendance.time.checkOut = request.time;
-        }
-
-        attendance = await AttendanceModel.create(newAttendance);
+          notes: request.notes || "",
+        });
       } else {
-        /* ===== UPDATE EXISTING ATTENDANCE ===== */
-
-        if (request.type === "CHECK_IN") {
-          attendance.time.checkIn = request.time;
-        }
-
-        if (request.type === "CHECK_OUT") {
+        // Update existing attendance
+        if (request.type === "CHECK_IN") attendance.time.checkIn = request.time;
+        if (request.type === "CHECK_OUT")
           attendance.time.checkOut = request.time;
-        }
+
+        attendance.notes = attendance.notes
+          ? `${attendance.notes} | ${request.notes || request.type}`
+          : request.notes || request.type;
 
         await attendance.save();
       }
     }
 
-    /* ================= UPDATE REQUEST ================= */
-
+    // ================= UPDATE REQUEST =================
     request.status = status;
     request.reviewedBy = req.userId;
     request.reviewedAt = new Date();
-
     await request.save();
 
     return ResponseUtil.successResponse(
