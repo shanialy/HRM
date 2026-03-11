@@ -5,8 +5,6 @@ import { AttendanceModel } from "../models/attendanceModel";
 import { ATTENDANCE_CONSTANT } from "../constants/attendance";
 import { AttendanceRequestModel } from "../models/attendanceRequestModel";
 
-// Pakistan Time Helper
-// Pakistan time string generator
 const getPakistanTime = () => {
   const now = new Date();
 
@@ -29,7 +27,6 @@ export const checkInCheckOut = async (req: any, res: Response) => {
   try {
     const { type, notes } = req.body;
 
-    // ================= VALIDATE TYPE =================
     if (!["CHECK_IN", "CHECK_OUT"].includes(type)) {
       return ResponseUtil.errorResponse(
         res,
@@ -37,149 +34,53 @@ export const checkInCheckOut = async (req: any, res: Response) => {
         "Invalid attendance type",
       );
     }
-    // // ================= LOCATION VALIDATION =================
-    // // 🔴 Prevent attendance if location is not provided (GPS off / blocked)
-    // if (latitude === undefined || longitude === undefined) {
-    //   return ResponseUtil.errorResponse(
-    //     res,
-    //     STATUS_CODES.BAD_REQUEST,
-    //     "Location is required. Please enable GPS to mark attendance.",
-    //   );
-    // }
-    // if (typeof latitude !== "number" || typeof longitude !== "number") {
-    //   return ResponseUtil.errorResponse(
-    //     res,
-    //     STATUS_CODES.BAD_REQUEST,
-    //     "Invalid location coordinates",
-    //   );
-    // }
-    // // ================= OFFICE LOCATION CONFIG =================
-    // // 🟢 Office coordinates (Google Maps se liye gaye)
-    // const OFFICE_LAT = Number(process.env.OFFICE_LAT);
-    // const OFFICE_LNG = Number(process.env.OFFICE_LNG);
-    // const ALLOWED_RADIUS = Number(process.env.OFFICE_RADIUS);
 
-    // // ================= DISTANCE FUNCTION =================
-    // // 🟢 Haversine formula to calculate distance between employee and office
-    // function getDistance(
-    //   lat1: number,
-    //   lon1: number,
-    //   lat2: number,
-    //   lon2: number,
-    // ) {
-    //   const R = 6371e3; // Earth radius in meters
-    //   const φ1 = (lat1 * Math.PI) / 180;
-    //   const φ2 = (lat2 * Math.PI) / 180;
-    //   const Δφ = ((lat2 - lat1) * Math.PI) / 180;
-    //   const Δλ = ((lon2 - lon1) * Math.PI) / 180;
-
-    //   const a =
-    //     Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-    //     Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-
-    //   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-    //   return R * c;
-    // }
-
-    // // ================= LOCATION VALIDATION =================
-    // // 🟢 Calculate distance between employee and office
-    // const distance = Math.round(
-    //   getDistance(latitude, longitude, OFFICE_LAT, OFFICE_LNG),
-    // );
-
-    // // 🔴 Block attendance if employee is outside 500 meters
-    // if (distance > ALLOWED_RADIUS) {
-    //   return ResponseUtil.errorResponse(
-    //     res,
-    //     STATUS_CODES.BAD_REQUEST,
-    //     `You must be within ${ALLOWED_RADIUS} meters of the office`,
-    //   );
-    // }
-
-    // ================= SERVER TIME =================
-    // Always use server time to prevent client manipulation
     const now = getPakistanTime();
+    const attendanceDate = now.date;
 
-    const attendanceDate = now.date; // PKT date string
-    /* =================================================
-        CHECK IN
-    ================================================= */
+    const year = Number(attendanceDate.split("-")[0]);
+    const month = Number(attendanceDate.split("-")[1]);
 
-    /* =================================================
-   CHECK IN
-================================================= */
+    const lastRecord: any = await AttendanceModel.findOne({
+      user: req.userId,
+      isLeave: { $ne: true },
+    }).sort({ createdAt: -1 });
 
     if (type === "CHECK_IN") {
-      // 🔹 STEP 1
-      // attendanceDate already PKT date string hona chahiye
-      // example: "2026-03-11"
-
       const todayAttendance = await AttendanceModel.findOne({
         user: req.userId,
-        date: attendanceDate, // PKT date se compare hoga
+        date: attendanceDate,
         isLeave: { $ne: true },
       });
 
-      // 🔴 Agar aaj ka attendance already hai to block
       if (todayAttendance) {
         return ResponseUtil.errorResponse(
           res,
           STATUS_CODES.BAD_REQUEST,
-          "Attendance already marked for today",
+          "You have already checked in today",
         );
       }
 
-      // 🔹 STEP 2
-      // Check karo koi previous attendance open to nahi
-      const openAttendance = await AttendanceModel.findOne({
-        user: req.userId,
-        isLeave: { $ne: true },
-        "time.checkOut": null,
-      });
-
-      if (openAttendance) {
+      if (lastRecord && !lastRecord.time.checkOut) {
         return ResponseUtil.errorResponse(
           res,
           STATUS_CODES.BAD_REQUEST,
-          "Please checkout first before new checkin",
+          "Please request admin with chckout request.",
         );
       }
 
-      // 🔹 STEP 3
-      // PKT date string se year aur month nikaalna
-      // attendanceDate example: "2026-03-11"
-
-      const year = Number(attendanceDate.split("-")[0]);
-      const month = Number(attendanceDate.split("-")[1]);
-
-      // 🔹 STEP 4
-      // attendance create karna
-      // checkIn me PKT datetime store hoga (now.full)
-
       const attendance = await AttendanceModel.create({
         user: req.userId,
-
-        year: year,
-        month: month,
-
-        // 🔹 PKT date string DB me store hogi
+        year,
+        month,
         date: attendanceDate,
-
         time: {
-          // 🔹 PKT full datetime store hoga
           checkIn: now.full,
           checkOut: null,
         },
-
         notes: notes ? `Check-In: ${notes}` : "Check-In",
-
-        // checkInLatitude: latitude,
-        // checkInLongitude: longitude,
       });
 
-      // 🔹 STEP 5
-      // success response return
       return ResponseUtil.successResponse(
         res,
         STATUS_CODES.SUCCESS,
@@ -187,76 +88,36 @@ export const checkInCheckOut = async (req: any, res: Response) => {
         ATTENDANCE_CONSTANT.CHECKIN_SUCCESS,
       );
     }
-    /* =================================================
-        CHECK OUT
-    ================================================= */
 
     if (type === "CHECK_OUT") {
-      // 🔴 STEP 1
-      // Find the open attendance (jisme checkout null ho)
-
-      const attendance: any = await AttendanceModel.findOne({
-        user: req.userId,
-        isLeave: { $ne: true },
-        "time.checkOut": null,
-      }).sort({ createdAt: -1 });
-
-      if (!attendance) {
+      if (!lastRecord) {
         return ResponseUtil.errorResponse(
           res,
-          STATUS_CODES.BAD_REQUEST,
-          ATTENDANCE_CONSTANT.CHECKIN_NOT_FOUND,
+          STATUS_CODES.NOT_FOUND,
+          "Attendance not found.",
         );
       }
 
-      // 🔴 STEP 2
-      // checkIn PKT string hai (example: "2026-03-11 10:15:22")
-      // usko Date object me convert karna padega calculation ke liye
-
-      const checkInTime = new Date(attendance.time.checkIn);
-
-      // 🔴 CHANGE HERE
-      // now object hai {date,time,full}
-      // isliye new Date(now.full) use karna hoga
-
-      const currentTime = new Date(now.full);
-
-      const diffHours =
-        (currentTime.getTime() - checkInTime.getTime()) / (1000 * 60 * 60);
-
-      // 🔴 STEP 3
-      // Prevent checkout after 20 hours
-
-      if (diffHours > 20) {
+      if (lastRecord.time.checkOut) {
         return ResponseUtil.errorResponse(
           res,
           STATUS_CODES.BAD_REQUEST,
-          "Checkout window expired. Please request admin.",
+          "No active check-in found",
         );
       }
 
-      // 🔴 STEP 4
-      // checkout time PKT string me store karo
+      lastRecord.time.checkOut = now.full;
 
-      attendance.time.checkOut = now.full;
-
-      // 🟢 Save employee location at checkout
-      // attendance.checkOutLatitude = latitude;
-      // attendance.checkOutLongitude = longitude;
-
-      attendance.notes = attendance.notes
-        ? `${attendance.notes} | Check-Out: ${notes || ""}`
+      lastRecord.notes = lastRecord.notes
+        ? `${lastRecord.notes} | Check-Out: ${notes || ""}`
         : `Check-Out: ${notes || ""}`;
 
-      // 🔴 STEP 5
-      // save updated record
-
-      await attendance.save();
+      await lastRecord.save();
 
       return ResponseUtil.successResponse(
         res,
         STATUS_CODES.SUCCESS,
-        { attendance },
+        { attendance: lastRecord },
         ATTENDANCE_CONSTANT.CHECKOUT_SUCCESS,
       );
     }
@@ -468,6 +329,29 @@ export const getTodayAttendance = async (req: any, res: any) => {
     // Pakistan date lo
     const now = getPakistanTime();
     const todayDate = now.date; // example: "2026-03-11"
+
+    // =====================================================
+    // 🔹 NEW STEP (IMPORTANT)
+    // Pehle check karo koi open attendance to nahi
+    // yani checkIn hai lekin checkOut abhi tak nahi hua
+    // =====================================================
+
+    const openAttendance = await AttendanceModel.findOne({
+      user: req.userId,
+      isLeave: { $ne: true },
+      "time.checkOut": null,
+    }).sort({ createdAt: -1 });
+
+    // Agar open attendance mil jaye
+    // to wahi frontend ko return kar do
+    if (openAttendance) {
+      return ResponseUtil.successResponse(
+        res,
+        STATUS_CODES.SUCCESS,
+        { attendance: openAttendance },
+        "Open attendance found",
+      );
+    }
 
     // 🔹 STEP 2
     // PKT date se record find karo
