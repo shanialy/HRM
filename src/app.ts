@@ -11,6 +11,7 @@ import employeeRoutes from "./routes/employeesRoutes";
 import attendanceRoutes from "./routes/attendanceRoutes";
 import clientRoutes from "./routes/clientRoutes";
 import mediaRoutes from "./routes/media";
+import announcementRoutes from "./routes/announcementsRoutes";
 
 import express, { Request, Response } from "express";
 import { API_PREFIX } from "./config/environment";
@@ -43,6 +44,7 @@ app.use(`${API_PREFIX}/employee`, employeeRoutes);
 app.use(`${API_PREFIX}/attendance`, attendanceRoutes);
 app.use(`${API_PREFIX}/client`, clientRoutes);
 app.use(`${API_PREFIX}/media`, mediaRoutes);
+app.use(`${API_PREFIX}/announcements`, announcementRoutes);
 
 // app.use(`${API_PREFIX}/user`, userRoutes);
 // app.use(`${API_PREFIX}/therapist`, therapistRoutes);

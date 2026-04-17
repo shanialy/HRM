@@ -4,6 +4,11 @@ import { STATUS_CODES } from "../constants/statusCodes";
 import { AttendanceModel } from "../models/attendanceModel";
 import { ATTENDANCE_CONSTANT } from "../constants/attendance";
 import { AttendanceRequestModel } from "../models/attendanceRequestModel";
+// import { calculateDistance } from "../constants/attendance";
+
+// const OFFICE_LAT = Number(process.env.OFFICE_LAT);
+// const OFFICE_LNG = Number(process.env.OFFICE_LNG);
+// const OFFICE_RADIUS = Number(process.env.OFFICE_RADIUS);
 
 const getPakistanTime = () => {
   const now = new Date();
@@ -18,14 +23,41 @@ const getPakistanTime = () => {
   });
 
   return {
-    date, // YYYY-MM-DD
-    time, // HH:mm:ss
-    full: `${date} ${time}`, // complete PKT timestamp
+    date,
+    time,
+    full: `${date} ${time}`,
   };
 };
+
 export const checkInCheckOut = async (req: any, res: Response) => {
   try {
     const { type, notes } = req.body;
+
+    // if (!latitude || !longitude) {
+    //   return ResponseUtil.errorResponse(
+    //     res,
+    //     STATUS_CODES.BAD_REQUEST,
+    //     "Location is required",
+    //   );
+    // }
+    // const distance = calculateDistance(
+    //   Number(latitude),
+    //   Number(longitude),
+    //   OFFICE_LAT,
+    //   OFFICE_LNG,
+    // );
+    // const distanceInMeters = Math.round(distance);
+    // console.log("User location:", latitude, longitude);
+    // console.log("Office location:", OFFICE_LAT, OFFICE_LNG);
+    // console.log("Distance:", distanceInMeters);
+
+    // if (distance > OFFICE_RADIUS) {
+    //   return ResponseUtil.errorResponse(
+    //     res,
+    //     STATUS_CODES.BAD_REQUEST,
+    //     `You are ${distanceInMeters}m away. Allowed range is ${OFFICE_RADIUS}m`,
+    //   );
+    // }
 
     if (!["CHECK_IN", "CHECK_OUT"].includes(type)) {
       return ResponseUtil.errorResponse(
@@ -180,8 +212,6 @@ export const getMyAttendance = async (req: any, res: Response) => {
 
 export const adminGetAllAttendance = async (req: any, res: Response) => {
   try {
-    // ❌ REMOVED: Role check (handled by role middleware)
-
     const { employeeId, month, year, from, to } = req.query;
 
     console.log("MONTH FROM FRONTEND:", month);
@@ -250,11 +280,39 @@ export const requestLeave = async (req: any, res: Response) => {
   try {
     const { date, notes } = req.body;
 
-    const leaveDate = new Date(date);
+    if (!date) {
+      return ResponseUtil.errorResponse(
+        res,
+        STATUS_CODES.BAD_REQUEST,
+        "Date is required",
+      );
+    }
+
+    const leaveDateStr = new Date(date).toLocaleDateString("en-CA", {
+      timeZone: "Asia/Karachi",
+    });
+
+    const year = Number(leaveDateStr.split("-")[0]);
+    const month = Number(leaveDateStr.split("-")[1]);
+
+    const leaveCount = await AttendanceModel.countDocuments({
+      user: req.userId,
+      year,
+      month,
+      isLeave: true,
+    });
+
+    if (leaveCount >= 2) {
+      return ResponseUtil.errorResponse(
+        res,
+        STATUS_CODES.BAD_REQUEST,
+        "Leave balance exceeded",
+      );
+    }
 
     const existing = await AttendanceModel.findOne({
       user: req.userId,
-      date: leaveDate,
+      date: leaveDateStr,
     });
 
     if (existing) {
@@ -265,16 +323,18 @@ export const requestLeave = async (req: any, res: Response) => {
       );
     }
 
+    const now = getPakistanTime();
+
     const leave = await AttendanceModel.create({
       user: req.userId,
-      year: leaveDate.getFullYear(),
-      month: leaveDate.getMonth() + 1,
-      date: leaveDate,
+      year,
+      month,
+      date: leaveDateStr,
       isLeave: true,
       status: "PENDING",
       notes,
       time: {
-        checkIn: leaveDate,
+        checkIn: now.full,
         checkOut: null,
       },
     });
@@ -295,7 +355,15 @@ export const approveRejectLeave = async (req: any, res: Response) => {
     const { id } = req.params;
     const { status } = req.body;
 
-    const leave = await AttendanceModel.findOne({
+    if (!["APPROVED", "REJECTED"].includes(status)) {
+      return ResponseUtil.errorResponse(
+        res,
+        STATUS_CODES.BAD_REQUEST,
+        "Invalid status",
+      );
+    }
+
+    const leave: any = await AttendanceModel.findOne({
       _id: id,
       isLeave: true,
     });
@@ -305,6 +373,14 @@ export const approveRejectLeave = async (req: any, res: Response) => {
         res,
         STATUS_CODES.NOT_FOUND,
         ATTENDANCE_CONSTANT.RECORD_NOTFOUND,
+      );
+    }
+
+    if (leave.status !== "PENDING") {
+      return ResponseUtil.errorResponse(
+        res,
+        STATUS_CODES.BAD_REQUEST,
+        "Leave already processed",
       );
     }
 
@@ -325,16 +401,8 @@ export const approveRejectLeave = async (req: any, res: Response) => {
 };
 export const getTodayAttendance = async (req: any, res: any) => {
   try {
-    // 🔹 STEP 1
-    // Pakistan date lo
     const now = getPakistanTime();
-    const todayDate = now.date; // example: "2026-03-11"
-
-    // =====================================================
-    // 🔹 NEW STEP (IMPORTANT)
-    // Pehle check karo koi open attendance to nahi
-    // yani checkIn hai lekin checkOut abhi tak nahi hua
-    // =====================================================
+    const todayDate = now.date;
 
     const openAttendance = await AttendanceModel.findOne({
       user: req.userId,
@@ -342,8 +410,6 @@ export const getTodayAttendance = async (req: any, res: any) => {
       "time.checkOut": null,
     }).sort({ createdAt: -1 });
 
-    // Agar open attendance mil jaye
-    // to wahi frontend ko return kar do
     if (openAttendance) {
       return ResponseUtil.successResponse(
         res,
@@ -353,15 +419,12 @@ export const getTodayAttendance = async (req: any, res: any) => {
       );
     }
 
-    // 🔹 STEP 2
-    // PKT date se record find karo
     const attendance = await AttendanceModel.findOne({
       user: req.userId,
       date: todayDate,
       isLeave: { $ne: true },
     });
 
-    // 🔹 STEP 3
     if (!attendance) {
       return ResponseUtil.successResponse(
         res,
@@ -371,7 +434,6 @@ export const getTodayAttendance = async (req: any, res: any) => {
       );
     }
 
-    // 🔹 STEP 4
     return ResponseUtil.successResponse(
       res,
       STATUS_CODES.SUCCESS,
@@ -387,7 +449,6 @@ export const createAttendanceRequest = async (req: any, res: Response) => {
   try {
     const { type, date, time, notes } = req.body;
 
-    // ✅ Required fields check
     if (!type || !date || !time || !notes) {
       return ResponseUtil.errorResponse(
         res,
@@ -404,7 +465,6 @@ export const createAttendanceRequest = async (req: any, res: Response) => {
       );
     }
 
-    // ✅ Convert to PKT date
     const requestDate = new Date(date);
     requestDate.setHours(0, 0, 0, 0);
 
@@ -431,7 +491,6 @@ export const createAttendanceRequest = async (req: any, res: Response) => {
       );
     }
 
-    // ✅ Duplicate pending request
     const existingRequest = await AttendanceRequestModel.findOne({
       user: req.userId,
       date: requestDate,
@@ -447,7 +506,6 @@ export const createAttendanceRequest = async (req: any, res: Response) => {
       );
     }
 
-    // ✅ Create request
     const request = await AttendanceRequestModel.create({
       user: req.userId,
       type,
@@ -473,7 +531,6 @@ export const getAttendanceRequests = async (req: any, res: Response) => {
     const { id, page = 1, limit = 20 } = req.query;
 
     if (id) {
-      // ✅ Fetch single request
       const request = await AttendanceRequestModel.findById(id).populate(
         "user",
         "firstName lastName email",
@@ -493,7 +550,6 @@ export const getAttendanceRequests = async (req: any, res: Response) => {
       );
     }
 
-    // ✅ Pagination for all pending requests
     const pageNumber = Number(page);
     const limitNumber = Number(limit);
     const skip = (pageNumber - 1) * limitNumber;
@@ -529,11 +585,44 @@ export const getAttendanceRequests = async (req: any, res: Response) => {
 };
 
 export const reviewAttendanceRequest = async (req: any, res: Response) => {
+  const formatToPKT = (inputTime: any) => {
+    const dateObj = new Date(inputTime);
+
+    const date = dateObj.toLocaleDateString("en-CA", {
+      timeZone: "Asia/Karachi",
+    });
+
+    const time = dateObj.toLocaleTimeString("en-GB", {
+      timeZone: "Asia/Karachi",
+      hour12: false,
+    });
+
+    return `${date} ${time}`;
+  };
+
+  const fixCheckoutIfNeeded = (checkIn: string, checkOut: string) => {
+    const inDate = new Date(checkIn);
+    let outDate = new Date(checkOut);
+
+    if (outDate <= inDate) {
+      outDate.setDate(outDate.getDate() + 1);
+    }
+
+    const date = outDate.toLocaleDateString("en-CA", {
+      timeZone: "Asia/Karachi",
+    });
+
+    const time = outDate.toLocaleTimeString("en-GB", {
+      timeZone: "Asia/Karachi",
+      hour12: false,
+    });
+
+    return `${date} ${time}`;
+  };
   try {
     const { id } = req.params;
     const { status } = req.body;
 
-    // ✅ Validate status
     if (!["APPROVED", "REJECTED"].includes(status)) {
       return ResponseUtil.errorResponse(
         res,
@@ -559,9 +648,7 @@ export const reviewAttendanceRequest = async (req: any, res: Response) => {
       );
     }
 
-    // ================= APPROVE =================
     if (status === "APPROVED") {
-      // Ensure request.date is string in YYYY-MM-DD
       let requestDateStr: string;
       if (typeof request.date === "string") requestDateStr = request.date;
       else if (request.date instanceof Date)
@@ -594,40 +681,47 @@ export const reviewAttendanceRequest = async (req: any, res: Response) => {
         );
       }
 
-      // Find existing attendance
       let attendance: any = await AttendanceModel.findOne({
         user: request.user,
         date: requestDateStr,
       });
 
       if (!attendance) {
-        // Create new attendance
         attendance = await AttendanceModel.create({
           user: request.user,
           year,
           month,
           date: requestDateStr,
           time: {
-            checkIn: request.type === "CHECK_IN" ? request.time : null,
-            checkOut: request.type === "CHECK_OUT" ? request.time : null,
+            checkIn:
+              request.type === "CHECK_IN" ? formatToPKT(request.time) : null,
+
+            checkOut:
+              request.type === "CHECK_OUT" ? formatToPKT(request.time) : null,
           },
           notes: request.notes || "",
         });
       } else {
-        // Update existing attendance
-        if (request.type === "CHECK_IN") attendance.time.checkIn = request.time;
+        if (request.type === "CHECK_IN")
+          attendance.time.checkIn = formatToPKT(request.time);
         if (request.type === "CHECK_OUT")
-          attendance.time.checkOut = request.time;
+          attendance.time.checkOut = fixCheckoutIfNeeded(
+            attendance.time.checkIn,
+            formatToPKT(request.time),
+          );
 
-        attendance.notes = attendance.notes
-          ? `${attendance.notes} | ${request.notes || request.type}`
-          : request.notes || request.type;
+        if (request.type === "CHECK_IN") {
+          attendance.notes = "Check-In";
+        }
+
+        if (request.type === "CHECK_OUT") {
+          attendance.notes = `Check-In | Check-Out: ${request.notes || "Checked out from system"}`;
+        }
 
         await attendance.save();
       }
     }
 
-    // ================= UPDATE REQUEST =================
     request.status = status;
     request.reviewedBy = req.userId;
     request.reviewedAt = new Date();
